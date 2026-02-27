@@ -1,0 +1,47 @@
+{
+    "project_info": {
+        "project_number": "859561397633",
+        "project_id": "scridddhub-1002a",
+        "storage_bucket": "scridddhub-1002a.firebasestorage.app"
+    },
+    "client": [
+        {
+            "client_info": {
+                "mobilesdk_app_id": "1:859561397633:android:6c5d068c822959c84dec80",
+                "android_client_info": {
+                    "package_name": "com.scridddhubmobile"
+                }
+            },
+            "oauth_client": [
+                {
+                    "client_id": "859561397633-cg485vo8detrfv0o6f3ptro4io38rrgd.apps.googleusercontent.com",
+                    "client_type": 1,
+                    "android_info": {
+                        "package_name": "com.scridddhubmobile",
+                        "certificate_hash": "00acee0096001a956ac843104ca2a13af521a7cd"
+                    }
+                },
+                {
+                    "client_id": "859561397633-687utev602o3sitvg1llj1urqqbdruqi.apps.googleusercontent.com",
+                    "client_type": 3
+                }
+            ],
+            "api_key": [
+                {
+                    "current_key": "AIzaSyDIAHHp0b9N7LAXJNojGFfKAkPhNj5ndiA"
+                }
+            ],
+            "services": {
+                "appinvite_service": {
+                    "other_platform_oauth_client": [
+                        {
+                            "client_id": "859561397633-687utev602o3sitvg1llj1urqqbdruqi.apps.googleusercontent.com",
+                            "client_type": 3
+                        }
+                    ]
+                }
+            }
+        }
+    ],
+    "configuration_version": "1"
+}
