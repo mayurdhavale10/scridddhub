@@ -1,0 +1,12 @@
+[
+  {
+    "name": "Mayur Dhavale",
+    "phone": "9999999999",
+    "license_number": "DL-9090",
+    "active": true,
+    "extra_details": {
+      "Maal": "plastic"
+    },
+    "driver_id": "DRV-f0ffa1ce"
+  }
+]

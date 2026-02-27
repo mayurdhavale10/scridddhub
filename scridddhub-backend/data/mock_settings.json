@@ -1,0 +1,18 @@
+{
+  "materials": [
+    "plastic",
+    "metal"
+  ],
+  "suppliers": [
+    "supplier 1",
+    "supplier 2"
+  ],
+  "units": [
+    "kg",
+    "ton"
+  ],
+  "deleted_materials": [],
+  "deleted_suppliers": [],
+  "deleted_units": [],
+  "hidden_sections": []
+}

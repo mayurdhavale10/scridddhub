@@ -1,0 +1,83 @@
+# =========================
+#  ENV & SECRETS
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+#  DEPENDENCIES
+# =========================
+node_modules/
+**/node_modules/
+
+# =========================
+# BUILD OUTPUTS
+# =========================
+.next/
+out/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# =========================
+#  LOGS
+# =========================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# =========================
+#  OS FILES
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+#  IDE / EDITOR
+# =========================
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+
+# =========================
+#  CERTIFICATES & KEYS
+# =========================
+*.pem
+*.key
+*.crt
+
+# =========================
+#  REACT NATIVE / EXPO
+# =========================
+.expo/
+.expo-shared/
+android/
+ios/
+
+# =========================
+#  DEPLOYMENT
+# =========================
+.vercel
+.railway
+.render
+
+# =========================
+# 🗄 DATABASE / LOCAL DATA
+# =========================
+*.sqlite
+*.db
+
+# =========================
+#  YOUR SECRET FILE (IMPORTANT)
+# =========================
+scridddhub-backend/data/mock_sales_config.json
+
+# =========================
+#  SAFE TEMPLATE (ALLOW THIS)
+# =========================
+!scridddhub-backend/data/mock_sales_config.example.json

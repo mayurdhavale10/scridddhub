@@ -1,0 +1,47 @@
+[
+  {
+    "field_id": "field_damp",
+    "label": "Moisture Level %",
+    "field_type": "number",
+    "required": true,
+    "material_scope": [
+      "General",
+      "Mixed Paper",
+      "Cardboard",
+      "Paper"
+    ],
+    "description": "Ensure moisture < 10%"
+  },
+  {
+    "field_id": "field_rad",
+    "label": "Is Radioactive?",
+    "field_type": "boolean",
+    "required": true,
+    "material_scope": [
+      "Iron",
+      "Steel",
+      "Metal"
+    ],
+    "description": "Geiger check"
+  },
+  {
+    "field_id": "field_type",
+    "label": "Contamination Type",
+    "field_type": "text",
+    "required": false,
+    "material_scope": [
+      "All"
+    ],
+    "description": "Describe any impurities"
+  },
+  {
+    "field_id": "field_grade",
+    "label": "Grade (A/B/C)",
+    "field_type": "text",
+    "required": true,
+    "material_scope": [
+      "All"
+    ],
+    "description": "Quality Grade"
+  }
+]

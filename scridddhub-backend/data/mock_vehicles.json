@@ -1,0 +1,15 @@
+[
+  {
+    "vehicle_number": "MH O1 AB 1234",
+    "vehicle_type": "truck_6w",
+    "capacity": 100,
+    "unit": "kg",
+    "phone": "9372652742",
+    "owned_by_tenant": true,
+    "active": true,
+    "extra_details": {
+      "LOCATION": "BHOPAL"
+    },
+    "vehicle_id": "VEH-13aac25e"
+  }
+]
