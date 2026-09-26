@@ -1,0 +1,50 @@
+# Go
+backend/*.exe
+backend/*.test
+backend/server
+
+# Node / mobile / web (added once those apps exist)
+node_modules/
+.expo/
+dist/
+.next/
+
+# Generated from backend/api/openapi.yaml — run `npm run generate` in packages/api-client
+packages/api-client/types.gen.ts
+
+# Env
+.env
+.env.local
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Scraped listing-portal data (MagicBricks, RealEstateIndia, ...) stays on the machine that
+# collected it — this repo is public and those pages/records are the portals' content. Pipeline
+# code and docs are kept; saved pages, records, snapshots and models trained on them are not.
+services/estimatedparcelvalue/pipeline/magicbricks_mmr_data/**
+!services/estimatedparcelvalue/pipeline/magicbricks_mmr_data/**/
+!services/estimatedparcelvalue/pipeline/magicbricks_mmr_data/**/*.md
+services/estimatedparcelvalue/pipeline/residential_land_pilots/**
+!services/estimatedparcelvalue/pipeline/residential_land_pilots/**/
+!services/estimatedparcelvalue/pipeline/residential_land_pilots/**/*.md
+services/estimatedparcelvalue/pipeline/exploration/**/*.html
+services/estimatedparcelvalue/pipeline/exploration/**/*.json
+services/estimatedparcelvalue/pipeline/exploration/**/*.png
+services/estimatedparcelvalue/pipeline/exploration/**/*.txt
+services/estimatedparcelvalue/pipeline/exploration/**/*.zip
+services/estimatedparcelvalue/pipeline/magicbricks/*.json
+services/estimatedparcelvalue/pipeline/ml_experiments/**/*.joblib
+services/estimatedparcelvalue/pipeline/ml_experiments/**/*.csv
+services/estimatedparcelvalue/pipeline/ml_experiments/**/*.json
+services/estimatedparcelvalue/pipeline/ml_experiments/**/*.jsonl
+
+# Logs and browser traffic captures (HAR files can contain cookies and session tokens)
+*.log
+*.har
+
+# OS
+.DS_Store
+Thumbs.db

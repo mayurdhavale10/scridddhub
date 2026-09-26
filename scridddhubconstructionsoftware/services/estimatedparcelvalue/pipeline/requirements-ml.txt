@@ -1,0 +1,2 @@
+# Fixed version for the first offline experiment; installed versions are recorded per run.
+scikit-learn==1.7.2

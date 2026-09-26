@@ -1,0 +1,215 @@
+<!--
+Screen 1 — Splash, reference implementation from Stitch (project 4654444127409167519).
+This is the working web (HTML/CSS) prototype of the animation. It has been PORTED to React
+Native — see mobile-app/src/screens/SplashScreen.tsx, wired as the app's initial route in
+App.tsx. Kept here as the source-of-truth spec, not superseded by the port.
+
+Port notes (2026-09-16): built with the plain Animated API, not reanimated — one Animated.Value
+driven 0→100 over 2.1s with Easing.bezier(0.2, 0.9, 0.3, 1), interpolated through the exact same
+percentage keyframe breakpoints as the CSS (0%, 6%, 14%, 20%, 26%, 32%, 38%, 46%, 52%, 58%, 64%,
+70%, 83%, 100%), preserving both "air pocket" stall beats. Two disclosed simplifications: CSS
+translateZ/perspective depth mid-flight isn't reproduced (RN has no true Z-compositing — only
+the entry scale(0.92)/scale(0.98) cues survive); the wordmark's `filter: blur()` dissolve is
+approximated with a scale pop instead of true blur (no native blur view in this build). The
+brand leaf PNG was downloaded from this file's own asset URL into
+mobile-app/src/assets/leaf.png (bundled locally, not fetched over network at launch). The exact
+Plus Jakarta Sans typeface isn't linked as a custom font yet — uses the system bold weight as a
+stand-in, same size/spacing.
+
+Timing fix (2026-09-17): the port's DURATION_MS was later slowed to 10500ms (5x the reference's
+real 2100ms, a deliberate brand-splash pacing choice). That slowdown exposed two real bugs the
+original 2100ms pace was too quick to notice: (1) the wordmark's own reveal (opacity/translate/
+scale settling to its final state) was interpolated across CSS keyframes 68%→86%, a window that —
+scaled to the slower duration — took ~1.9 real seconds just for the text to fade/pop in, reading
+as sluggish; tightened to 68%→72% (~225ms real, confirmed via an Animated.Value listener + logcat
+timestamps) without touching the leaf's own timing or the overall duration/hold. (2) The leaf's
+final "logo lockup" slide (translateX 0→-104, clearing it from behind the wordmark) was on
+keyframes 70%→83% — this bezier's tail crawls very slowly in raw-progress terms, so at 10500ms
+that gap stretched into several real seconds during which the leaf visibly sat on top of the text.
+Pulled that breakpoint in to 72% (matching the wordmark's own snap window) so the leaf clears the
+text immediately after landing instead of after a multi-second delay. Confirmed via the same
+listener technique: leaf's positional shift now happens ~t=2155-2270ms, right alongside the
+wordmark's own snap. Both are timing/keyframe-position fixes, not speed changes to the tumble.
+
+Colors/fonts already match the design system in mobile-app/src/theme/colors.ts:
+primary #2E7D32 wordmark (note: this is the raw brand green from the Stitch design doc, distinct
+from the app UI's own `colors.primary` token, which as of 2026-09-16 was separately changed to
+black per a different mockup — the splash still uses the literal logo green regardless, since
+it's brand identity, not a UI accent), Plus Jakarta Sans 800 wordmark.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport">
+<title>ScridddHub Animated Splash</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800&amp;display=swap" rel="stylesheet">
+<style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background-color: #ffffff;
+      overflow: hidden;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /*
+      Physics-Driven Aerodynamic Leaf Motion:
+      Total duration: 2.1s
+      0.00s - 1.35s (0% - 64%): Organic tumbling, 3D multi-axis flutter, edge slicing, air pockets & stall halts.
+        - Pocket 1 (~26%-33%): Leaf catches air resistance, nearly halts vertical fall, flutters flat rotateY(10deg), then tips and dives on edge rotateY(64deg).
+        - Pocket 2 (~58%-64%): Second turbulent stall with micro-buffet nudge, floats to dead center.
+      1.35s - 1.75s (64% - 83%): Clean dissipation of angular energy; settles smoothly and glides left to -104px.
+      1.45s - 1.90s (69% - 90%): Brand wordmark glides in smoothly from right (+74px to +34px) with subtle blur dissolve.
+      1.90s - 2.10s+ (90% - 100%): Perfect static hold on the exact centered lockup matching the official logo.
+    */
+
+    .perspective-container {
+      perspective: 1000px;
+      perspective-origin: 50% 48%;
+    }
+
+    @keyframes leafAerodynamicFlight {
+      /* Entry: High above screen, tipped on edge */
+      0% {
+        opacity: 0;
+        transform: translate3d(-14px, -450px, 90px) rotateX(42deg) rotateY(-58deg) rotateZ(-24deg) scale(0.92);
+      }
+      6% {
+        opacity: 1;
+        /* Rapid dive cutting through air */
+        transform: translate3d(-28px, -330px, 50px) rotateX(32deg) rotateY(-48deg) rotateZ(-16deg) scale(0.98);
+      }
+      14% {
+        /* Sudden aerodynamic tilt, lateral slide to left */
+        transform: translate3d(-52px, -240px, 25px) rotateX(18deg) rotateY(-22deg) rotateZ(-28deg);
+      }
+      20% {
+        /* Reactive wind buffet pushing leaf slightly inward and flattening */
+        transform: translate3d(-38px, -185px, 15px) rotateX(-10deg) rotateY(12deg) rotateZ(-12deg);
+      }
+      /* AIR POCKET #1: Hover halt / stall in descent */
+      26% {
+        /* Vertical speed dramatically arrested, catches air flat */
+        transform: translate3d(-32px, -165px, 30px) rotateX(-18deg) rotateY(6deg) rotateZ(-8deg);
+      }
+      32% {
+        /* Hover flutter stall, slight buoyant rise / float */
+        transform: translate3d(-35px, -162px, 35px) rotateX(-8deg) rotateY(14deg) rotateZ(-4deg);
+      }
+      38% {
+        /* Tips forward nose-down, rolling onto edge to slice downward rapidly */
+        transform: translate3d(-10px, -125px, 10px) rotateX(36deg) rotateY(62deg) rotateZ(18deg);
+      }
+      46% {
+        /* Fast diagonal swoop crossing center toward right */
+        transform: translate3d(38px, -68px, -15px) rotateX(24deg) rotateY(44deg) rotateZ(22deg);
+      }
+      52% {
+        /* Right lateral apex: caught by air, rotates back across Y-axis */
+        transform: translate3d(46px, -32px, 5px) rotateX(-14deg) rotateY(-28deg) rotateZ(12deg);
+      }
+      /* AIR POCKET #2: Second micro-stall & settling */
+      58% {
+        /* Sudden lateral drag & micro air buffet nudge */
+        transform: translate3d(18px, -12px, 20px) rotateX(-8deg) rotateY(-10deg) rotateZ(2deg);
+      }
+      64% {
+        /* Floats directly down to viewport center */
+        transform: translate3d(0px, 0px, 5px) rotateX(4deg) rotateY(-4deg) rotateZ(-1deg);
+      }
+      70% {
+        /* Completely flat, energy dissipated at center */
+        transform: translate3d(0px, 0px, 0px) rotateX(0deg) rotateY(0deg) rotateZ(0deg);
+      }
+      83%, 100% {
+        /* Seamless gliding to exact brand mark position */
+        transform: translate3d(-104px, 0px, 0px) rotateX(0deg) rotateY(0deg) rotateZ(0deg);
+        opacity: 1;
+      }
+    }
+
+    @keyframes wordmarkEntrance {
+      0%, 68% {
+        opacity: 0;
+        transform: translate3d(74px, 0, 0);
+        filter: blur(4px);
+      }
+      86%, 100% {
+        opacity: 1;
+        transform: translate3d(34px, 0, 0);
+        filter: blur(0px);
+      }
+    }
+
+    .leaf-motion {
+      animation: leafAerodynamicFlight 2.1s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+      transform-style: preserve-3d;
+      will-change: transform, opacity;
+    }
+
+    .wordmark-motion {
+      animation: wordmarkEntrance 2.1s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      will-change: transform, opacity, filter;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .leaf-motion {
+        animation: none !important;
+        transform: translate3d(-104px, 0, 0) !important;
+        opacity: 1 !important;
+      }
+      .wordmark-motion {
+        animation: none !important;
+        transform: translate3d(34px, 0, 0) !important;
+        opacity: 1 !important;
+        filter: none !important;
+      }
+    }
+  </style>
+</head>
+<body class="bg-white text-[#2E7D32] flex items-center justify-center min-h-screen select-none m-0 p-0">
+<!-- Strictly vertical mobile portrait screen container (390px x 844px) on pure white -->
+<main class="relative w-[390px] h-[844px] max-w-[390px] max-h-[844px] bg-white overflow-hidden flex items-center justify-center cursor-pointer select-none" id="splash-stage" title="Tap anywhere to replay animation">
+<!-- 3D Perspective Stage for aerodynamic flight physics -->
+<div class="perspective-container relative w-full h-full flex items-center justify-center pointer-events-none" id="anim-wrapper">
+<!-- Falling Leaf Mark: Uses 64px width leaf icon with 3D aerodynamic flutter & edge-turning -->
+<div class="absolute leaf-motion z-10 flex items-center justify-center pointer-events-none" id="leaf-elem">
+<img alt="ScridddHub Leaf" class="w-[64px] h-[64px] object-contain block drop-shadow-none" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA8cBzNJ3T0VQoRAAm_BND-SqvU5PawKnUaXCwWn12lvCjkfMQKwWpwzGul6Pf1mX_lhqaTBUabQU6jUyYD7AKI0pxavrtEpjA2N4_SVYSOCs-GusJOK8OzXQYXRBkkr4pa1AWEpA6aoLIOC7dMuargzlXdtYanDUE_LA4-8iI0BgZctrJczd-xDBvv5ZUcfe5LPv9V8eaDvX13t_EEwSsoWKyhhOme9ewQzNS9lbVv8i5KqaQlGC6f4ERw8Rk6LlYEIQ">
+</div>
+<!-- Wordmark: Plus Jakarta Sans 800 bold in exact dark forest green #2E7D32 -->
+<div class="absolute wordmark-motion z-10 pointer-events-none whitespace-nowrap" id="wordmark-elem">
+<span class="text-[#2E7D32] font-extrabold tracking-[-0.03em] text-[40px] leading-none select-none">
+          ScridddHub
+        </span>
+</div>
+</div>
+</main>
+<script>
+    // Interactive click/tap to instantly replay splash animation for testing
+    const stage = document.getElementById('splash-stage');
+    const leaf = document.getElementById('leaf-elem');
+    const wordmark = document.getElementById('wordmark-elem');
+
+    function replay() {
+      leaf.classList.remove('leaf-motion');
+      wordmark.classList.remove('wordmark-motion');
+      void leaf.offsetWidth; // Force reflow
+      void wordmark.offsetWidth;
+      leaf.classList.add('leaf-motion');
+      wordmark.classList.add('wordmark-motion');
+    }
+
+    stage.addEventListener('click', replay);
+    stage.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      replay();
+    }, { passive: false });
+  </script>
+</body></html>

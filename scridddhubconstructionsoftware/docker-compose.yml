@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: scridddhub
+      POSTGRES_PASSWORD: scridddhub_dev
+      POSTGRES_DB: scridddhub
+    ports:
+      # Host port 5434, not 5432 — this machine has multiple native Postgres Windows
+      # services already bound to 5432 AND 5433. Confirmed 5434 is actually free before
+      # picking it (see project memory: don't assume the next port up is free on this
+      # machine). Container's internal port (right side) stays 5432; other containers on
+      # the compose network (e.g. migrate) still reach it at postgres:5432 either way.
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scridddhub -d scridddhub"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    image: migrate/migrate:v4.17.1
+    volumes:
+      - ./backend/migrations:/migrations
+    entrypoint:
+      [
+        "migrate",
+        "-path",
+        "/migrations",
+        "-database",
+        "postgres://scridddhub:scridddhub_dev@postgres:5432/scridddhub?sslmode=disable",
+      ]
+    command: ["up"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Self-hosted geocoder for the planned-infrastructure pipeline's bulk station geocoding — the
+  # public nominatim.openstreetmap.org forbids bulk use. Opt-in: only starts with
+  # `docker compose --profile geo up -d nominatim`. First start imports OpenStreetMap data for
+  # western India (≈220 MB download; import takes a while) — see docs/self-hosted-nominatim.md.
+  nominatim:
+    image: mediagis/nominatim:5.3
+    profiles: ["geo"]
+    environment:
+      PBF_URL: https://download.geofabrik.de/asia/india/western-zone-latest.osm.pbf
+      REPLICATION_URL: https://download.geofabrik.de/asia/india/western-zone-updates/
+      IMPORT_STYLE: address # enough for place/address lookups; much smaller than "full"
+      NOMINATIM_PASSWORD: nominatim_dev
+      THREADS: 4
+    ports:
+      - "8088:8080" # 8088 confirmed free on this machine (2026-09-27)
+    volumes:
+      - nominatim_data:/var/lib/postgresql/16/main
+    shm_size: 1gb
+
+volumes:
+  postgres_data:
+  nominatim_data:

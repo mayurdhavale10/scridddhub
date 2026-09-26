@@ -1,0 +1,3378 @@
+openapi: 3.1.0
+info:
+  title: ScridddHub API
+  version: 0.1.0
+  description: >
+    Source of truth for the TypeScript client generated into packages/api-client.
+    Covers only what's implemented so far (Level 1: Land Parcels vertical slice).
+servers:
+  - url: http://localhost:8080
+
+paths:
+  /projects:
+    post:
+      operationId: createProject
+      summary: Create a project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /projects/{id}:
+    get:
+      operationId: getProject
+      summary: Get a project by id
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /projects/{projectID}/land-parcels:
+    get:
+      operationId: listLandParcelsByProject
+      summary: List land parcels for a project
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LandParcel"
+
+  /reference/geography/districts:
+    get:
+      operationId: listGeographyDistricts
+      summary: All 36 real Maharashtra districts (docs/adr/0006) — from the government's own Common Village Master API, not just districts with a Ready Reckoner rate on file
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StringList"
+
+  /reference/geography/talukas:
+    get:
+      operationId: listGeographyTalukas
+      summary: Real talukas within a district (docs/adr/0006)
+      parameters:
+        - name: district
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StringList"
+
+  /reference/geography/villages:
+    get:
+      operationId: listGeographyVillages
+      summary: Real villages within a district+taluka (docs/adr/0006) — all 44,918 statewide, not just villages with a rate on file
+      parameters:
+        - name: district
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: taluka
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StringList"
+
+  /reference/geography/villages/search:
+    get:
+      operationId: searchGeographyVillages
+      summary: Free-text village search across all 44,918 real Maharashtra villages (docs/adr/0006 follow-up) — powers a single search field instead of three cascading district/taluka/village pickers; each result carries its full district/taluka/village context
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VillageMatchList"
+
+  /land-parcels/estimate-value/ai:
+    get:
+      operationId: estimateParcelValueAI
+      summary: UNVERIFIED LLM-based market estimate (Groq) — never equivalent to the government-data-backed /land-parcels/estimate-value; Confidence is always "low"
+      description: >-
+        Always asks the LLM. If district/taluka/village name a real village with a Ready Reckoner
+        rate on file, the server looks that rate up itself and gives it to the model as a floor;
+        otherwise the model works from location, area, source and notes alone.
+      parameters:
+        - name: location
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: area_acres
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: source
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: notes
+          in: query
+          required: false
+          description: user's free-text notes about the plot (truncated to 1000 characters)
+          schema:
+            type: string
+        - name: district
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: taluka
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: village
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AILandValueEstimate"
+
+  /land-parcels/estimate-value:
+    get:
+      operationId: estimateParcelValue
+      summary: On-demand, standalone location-based value estimate (Screen 4.2 "Estimate Value")
+      description: >-
+        Called only when whoever is adding a parcel doesn't already know the price — never
+        automatic. Grounded entirely in this location's own government-published Ready Reckoner
+        Rate (Maharashtra e-ASR); NEVER a comparison against other parcels recorded anywhere in
+        this app, at any scope (see docs/adr/0004). 404s honestly if no rate is on file yet for
+        this exact village, rather than fabricating a number.
+      parameters:
+        - name: district
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: taluka
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: village
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: area_acres
+          in: query
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocationValueEstimate"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /land-parcels:
+    post:
+      operationId: createLandParcel
+      summary: Create a land parcel (Screen 4 "+" action)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLandParcelRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LandParcel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /land-parcels/{id}:
+    get:
+      operationId: getLandParcel
+      summary: Get a land parcel by id (Screen 5 detail)
+      parameters:
+        - $ref: "#/components/parameters/LandParcelId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LandParcel"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /land-parcels/{id}/stage:
+    patch:
+      operationId: updateLandParcelStage
+      summary: Move a land parcel to a new pipeline stage
+      parameters:
+        - $ref: "#/components/parameters/LandParcelId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stage]
+              properties:
+                stage:
+                  $ref: "#/components/schemas/LandParcelStage"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LandParcel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /land-parcels/{id}/verify-source:
+    post:
+      operationId: verifyLandParcelSource
+      summary: On-demand reachability check against the parcel's own recorded source_url (never a content scrape; never runs automatically)
+      parameters:
+        - $ref: "#/components/parameters/LandParcelId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerifySourceResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /land-parcels/{id}/close:
+    post:
+      operationId: recordLandParcelClosedPrice
+      summary: Record the real, final transacted price once a deal actually closes (docs/adr/0005)
+      description: >-
+        Distinct from the parcel's asking price (cost_rupees), which is captured once at creation
+        and never re-verified. This is the only legitimate ground truth for a future pricing
+        model — see services/estimatedparcelvalue/README.md.
+      parameters:
+        - $ref: "#/components/parameters/LandParcelId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [closed_price_rupees]
+              properties:
+                closed_price_rupees:
+                  type: integer
+                  format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LandParcel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /reference/pricing-pool/closed-transactions:
+    get:
+      operationId: listPooledClosedTransactions
+      summary: Real closed transactions pooled across every org/project (docs/adr/0005) — not wired to any UI yet
+      description: >-
+        Infrastructure for a future pricing model, built ahead of having enough volume to train
+        one. Deliberately anonymized (no org/project/parcel identity) and never scoped to a single
+        project — see docs/adr/0005 for why.
+      parameters:
+        - name: district
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: taluka
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: village
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListClosedTransactionsResponse"
+
+  /land-parcels/{parcelID}/feasibility-assessment:
+    put:
+      operationId: upsertFeasibilityAssessment
+      summary: Set (create or replace) a parcel's feasibility assessment (Screen 5)
+      parameters:
+        - name: parcelID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertFeasibilityAssessmentRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeasibilityAssessment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    get:
+      operationId: getFeasibilityAssessment
+      summary: Get a parcel's feasibility assessment (Screen 5)
+      parameters:
+        - name: parcelID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeasibilityAssessment"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /land-parcels/{parcelID}/planned-infrastructure:
+    get:
+      operationId: getPlannedInfrastructure
+      summary: Approved infrastructure projects near a parcel (Screen 5)
+      description: >-
+        From the shared reference list (migrations 000028/000029; approved projects only). The
+        parcel's free-text location is geocoded (cached); projects with located stations are matched
+        by straight-line distance within radius_km, nearest first. Projects without located points
+        fall back to taluka matching (match_basis says which). An empty list means nothing on the
+        list is near it, not that nothing is planned.
+      parameters:
+        - name: parcelID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlannedInfrastructureList"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /reference/planned-infrastructure:
+    get:
+      operationId: getPlannedInfrastructureForLocation
+      summary: Approved infrastructure near any typed location — no parcel needed (see services/plannedinfrastructure)
+      parameters:
+        - name: location
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: district
+          in: query
+          required: false
+          description: only used together with taluka, when the location was picked from the real village list
+          schema:
+            type: string
+        - name: taluka
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlannedInfrastructureList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /land-parcels/{parcelID}/legal-check:
+    put:
+      operationId: upsertLegalCheck
+      summary: Set (create or replace) a parcel's legal & RERA check (Screen 6)
+      parameters:
+        - name: parcelID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertLegalCheckRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegalCheck"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    get:
+      operationId: getLegalCheck
+      summary: Get a parcel's legal & RERA check (Screen 6)
+      parameters:
+        - name: parcelID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegalCheck"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /land-parcels/{parcelID}/approvals/analyze:
+    post:
+      operationId: analyzeProjectForApprovals
+      summary: >
+        Extract site characteristics from free text and (re)generate the parcel's government
+        approval list (Screen 7 "Tell Us About Your Project" / "Re-analyze")
+      parameters:
+        - name: parcelID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [free_text]
+              properties:
+                free_text:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LandParcelApproval"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /land-parcels/{parcelID}/approvals:
+    get:
+      operationId: listApprovals
+      summary: List a parcel's government approvals (Screen 7)
+      parameters:
+        - name: parcelID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LandParcelApproval"
+
+  /land-parcels/{parcelID}/site-summary:
+    get:
+      operationId: getSiteSummary
+      summary: Get the parcel's saved project-summary free text + extracted characteristics
+      parameters:
+        - name: parcelID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SiteSummary"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /approvals/{approvalID}/status:
+    patch:
+      operationId: updateApprovalStatus
+      summary: Manually update one approval's status (e.g. a department responds)
+      parameters:
+        - name: approvalID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  $ref: "#/components/schemas/ApprovalStatus"
+                submitted_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LandParcelApproval"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /projects/{projectID}/land-tenure:
+    put:
+      operationId: upsertLandTenure
+      summary: Set (create or replace) a project's land tenure / JDA structure (Screen 8.9)
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertLandTenureRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LandTenure"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    get:
+      operationId: getLandTenure
+      summary: Get a project's land tenure / JDA structure (Screen 8.9)
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LandTenure"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /projects/{projectID}/financial-structure:
+    put:
+      operationId: upsertFinancialStructure
+      summary: Set (create or replace) a project's Sources & Uses summary (Screen 8)
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertFinancialStructureRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FinancialStructure"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    get:
+      operationId: getFinancialStructure
+      summary: Get a project's Sources & Uses summary (Screen 8)
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FinancialStructure"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /projects/{projectID}/escrow-account:
+    get:
+      operationId: getEscrowAccount
+      summary: Get a project's escrow account (Screen 8.10) — bank-verified vs. developer ledger
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EscrowAccount"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /projects/{projectID}/escrow-account/developer-ledger:
+    put:
+      operationId: updateEscrowDeveloperLedger
+      summary: Update the developer's own self-reported escrow ledger figure
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [balance_rupees]
+              properties:
+                balance_rupees:
+                  type: integer
+                  format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EscrowAccount"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /projects/{projectID}/escrow-account/bank-feed:
+    put:
+      operationId: updateEscrowBankFeed
+      summary: >
+        Update the bank-verified escrow balance. For a real bank statement-fetch integration to
+        call (a scheduled job or webhook) — not intended for the mobile app's own UI.
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [balance_rupees, source_name]
+              properties:
+                balance_rupees:
+                  type: integer
+                  format: int64
+                source_name:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EscrowAccount"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /projects/{projectID}/certification-packets:
+    post:
+      operationId: createCertificationPacket
+      summary: Create a quarterly certification packet (Screen 8.4) — also creates its 3 empty sub-drafts
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [period_year, period_quarter]
+              properties:
+                period_year:
+                  type: integer
+                period_quarter:
+                  type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificationPacket"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /projects/{projectID}/certification-packets/{year}/{quarter}:
+    get:
+      operationId: getCertificationPacket
+      summary: Get a quarterly certification packet with all 3 sub-drafts (Screen 8.4)
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: year
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: quarter
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificationPacket"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /certification-packets/{packetID}/send-to-professionals:
+    post:
+      operationId: sendCertificationPacketToProfessionals
+      summary: Send the packet's drafts to the Engineer & CA for review
+      parameters:
+        - $ref: "#/components/parameters/PacketId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificationPacket"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /certification-packets/{packetID}/engineer-draft:
+    put:
+      operationId: upsertEngineerDraft
+      summary: Set the Engineer's cost-incurred draft (Screen 8.4.1)
+      parameters:
+        - $ref: "#/components/parameters/PacketId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cost_by_tower:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/TowerCost"
+                committed_not_reflected_rupees:
+                  type: integer
+                  format: int64
+                  nullable: true
+                source_note:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificationPacket"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /certification-packets/{packetID}/engineer-draft/sign:
+    post:
+      operationId: signEngineerDraft
+      summary: Engineer's legal certification of the cost-incurred draft
+      parameters:
+        - $ref: "#/components/parameters/PacketId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificationPacket"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /certification-packets/{packetID}/architect-certificate/schedule-site-visit:
+    post:
+      operationId: scheduleArchitectSiteVisit
+      summary: Record that a site visit has been scheduled (no AI-draft path exists for this entity)
+      parameters:
+        - $ref: "#/components/parameters/PacketId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificationPacket"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /certification-packets/{packetID}/architect-certificate/complete-site-visit:
+    post:
+      operationId: completeArchitectSiteVisit
+      summary: Record that the site visit happened — required before certification is possible
+      parameters:
+        - $ref: "#/components/parameters/PacketId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificationPacket"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /certification-packets/{packetID}/architect-certificate/certify:
+    post:
+      operationId: certifyArchitect
+      summary: Architect's legal certification of % completion — refused unless a site visit was already recorded
+      parameters:
+        - $ref: "#/components/parameters/PacketId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [completion_pct, signed_by]
+              properties:
+                completion_pct:
+                  type: number
+                signed_by:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificationPacket"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /certification-packets/{packetID}/ca-draft:
+    put:
+      operationId: upsertCADraft
+      summary: Set the CA's escrow reconciliation draft (Screen 8.4.2)
+      parameters:
+        - $ref: "#/components/parameters/PacketId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                collected_from_buyers_rupees:
+                  type: integer
+                  format: int64
+                required_escrow_pct:
+                  type: number
+                actually_routed_to_escrow_rupees:
+                  type: integer
+                  format: int64
+                source_note:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificationPacket"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /certification-packets/{packetID}/ca-draft/sign:
+    post:
+      operationId: signCADraft
+      summary: CA's legal certification of the escrow reconciliation draft
+      parameters:
+        - $ref: "#/components/parameters/PacketId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificationPacket"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /projects/{projectID}/lender-covenant:
+    put:
+      operationId: upsertLenderCovenant
+      summary: Set a project's lender covenant tracker (Screen 8.13)
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertLenderCovenantRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LenderCovenant"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    get:
+      operationId: getLenderCovenant
+      summary: Get a project's lender covenant tracker (Screen 8.13)
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LenderCovenant"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /projects/{projectID}/accounting-sync:
+    put:
+      operationId: upsertAccountingSync
+      summary: Set a project's accounting sync state (Screen 8.12) — Tally / GST bridge
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertAccountingSyncRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountingSync"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    get:
+      operationId: getAccountingSync
+      summary: Get a project's accounting sync state (Screen 8.12)
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountingSync"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /projects/{projectID}/gst-filings:
+    put:
+      operationId: upsertGSTFiling
+      summary: Set a project's GST filing & Rule 42/43 ITC reversal record (Screen 8.14)
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertGSTFilingRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GSTFiling"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /projects/{projectID}/gst-filings/{year}/{quarter}:
+    get:
+      operationId: getGSTFiling
+      summary: Get a project's GST filing record for a period (Screen 8.14)
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: year
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: quarter
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GSTFiling"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /projects/{projectID}/tds-filings:
+    put:
+      operationId: upsertTDSFiling
+      summary: Set a project's TDS return filing record (Screen 8.15)
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertTDSFilingRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TDSFiling"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /projects/{projectID}/tds-filings/{year}/{quarter}:
+    get:
+      operationId: getTDSFiling
+      summary: Get a project's TDS filing record for a period (Screen 8.15)
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: year
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: quarter
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TDSFiling"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /projects/{projectID}/tpa-reports:
+    put:
+      operationId: upsertTPAReport
+      summary: Assemble/update a per-lender TPA/QPR draft report (Screen 8.16)
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertTPAReportRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TPAReport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /projects/{projectID}/tpa-reports/{lenderName}/{year}/{quarter}:
+    get:
+      operationId: getTPAReport
+      summary: Get a project's TPA/QPR report for a lender and period (Screen 8.16)
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: lenderName
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: year
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: quarter
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TPAReport"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /tpa-reports/{reportID}/submit:
+    post:
+      operationId: markTPAReportSubmitted
+      summary: Mark a TPA/QPR report as submitted to the lender (Screen 8.16, "Mark Submitted")
+      parameters:
+        - name: reportID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TPAReport"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /orgs/{orgID}/litigation-cases:
+    post:
+      operationId: createLitigationCase
+      summary: Record a new litigation/dispute matter (Screen 8.17)
+      parameters:
+        - name: orgID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLitigationCaseRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LitigationCase"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    get:
+      operationId: listLitigationCases
+      summary: List an org's complete internal litigation/dispute record (Screen 8.17)
+      parameters:
+        - name: orgID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LitigationCase"
+
+  /litigation-cases/{caseID}/status:
+    patch:
+      operationId: updateLitigationCaseStatus
+      summary: Update a litigation case's status (Screen 8.17)
+      parameters:
+        - name: caseID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateLitigationCaseStatusRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LitigationCase"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /projects/{projectID}/risk-register:
+    put:
+      operationId: upsertRiskRegisterEntry
+      summary: Set one risk category's assessment for a project (Screen 9)
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertRiskRegisterEntryRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RiskRegisterEntry"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    get:
+      operationId: listRiskRegisterEntries
+      summary: List a project's risk register — up to 5 fixed categories (Screen 9)
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RiskRegisterEntry"
+
+  /projects/{projectID}/tenders:
+    post:
+      operationId: createTender
+      summary: Start a selective tender for a trade package (Screen 10)
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTenderRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tender"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    get:
+      operationId: listTenders
+      summary: List a project's tenders (Screen 10)
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Tender"
+
+  /tenders/{tenderID}/bids:
+    post:
+      operationId: createTenderBid
+      summary: Add a shortlisted contractor's bid to a tender (Screen 10)
+      parameters:
+        - name: tenderID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTenderBidRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenderBid"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    get:
+      operationId: listTenderBids
+      summary: List a tender's shortlisted bids (Screen 10)
+      parameters:
+        - name: tenderID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TenderBid"
+
+  /tender-bids/{bidID}:
+    patch:
+      operationId: updateTenderBid
+      summary: Update a bid's technical/financial status or recommendation (Screen 10)
+      parameters:
+        - name: bidID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTenderBidRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenderBid"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /projects/{projectID}/master-schedule:
+    post:
+      operationId: createMasterSchedule
+      summary: Create the project's master schedule, seeding all 5 fixed milestones (Screen 11)
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMasterScheduleRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MasterSchedule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    get:
+      operationId: getMasterSchedule
+      summary: Get the project's master schedule and all 5 milestones (Screen 11)
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MasterSchedule"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /master-schedule-milestones/{milestoneID}:
+    patch:
+      operationId: updateMasterScheduleMilestone
+      summary: Update one milestone's status/target date (Screen 11)
+      parameters:
+        - name: milestoneID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMasterScheduleMilestoneRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MasterScheduleMilestone"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /master-schedules/{scheduleID}/confirm:
+    post:
+      operationId: confirmMasterSchedule
+      summary: Lock in the schedule as a whole (Screen 11, "Confirm Schedule")
+      parameters:
+        - name: scheduleID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MasterSchedule"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /audit-log:
+    get:
+      operationId: listAuditLog
+      summary: List recent audit trail entries across the system (Screen 8.11)
+      description: >-
+        A read-only view over the existing append-only audit_log table (ADR-0002) — not scoped
+        to a project yet, since real per-project/per-buyer RBAC scoping isn't built. Every entry
+        has old_data/new_data as raw JSON for the client to diff generically, since building a
+        bespoke human-readable formatter per audited table is out of scope for this screen.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLogEntry"
+
+components:
+  parameters:
+    ProjectId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    LandParcelId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PacketId:
+      name: packetID
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+    LandParcelStage:
+      type: string
+      enum: [sourced, screened, dd, negotiating]
+
+    CreateProjectRequest:
+      type: object
+      required: [org_id, name]
+      properties:
+        org_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        city:
+          type: string
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        org_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        city:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateLandParcelRequest:
+      type: object
+      required: [project_id, name]
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        location:
+          type: string
+        area_acres:
+          type: number
+          nullable: true
+          description: Required whenever cost_rupees is set (enforced server-side); optional for a price-less "just checking a location" parcel.
+        cost_rupees:
+          type: integer
+          format: int64
+          nullable: true
+          description: Omitted for a "just checking a location" parcel with no asking price yet.
+        fsi:
+          type: number
+          nullable: true
+        source:
+          type: string
+          nullable: true
+          description: Where the builder found out about this parcel (broker, online listing, referral, field survey, ...). Free-form provenance, not a constrained enum.
+        source_url:
+          type: string
+          nullable: true
+          description: The actual listing/portal link backing up source, if there is one — makes the source a checkable fact instead of just a label.
+        district:
+          type: string
+          nullable: true
+          description: Structured location, set only when known (the "Just checking a location" flow collects this via the Ready Reckoner picker). See docs/adr/0005.
+        taluka:
+          type: string
+          nullable: true
+        village:
+          type: string
+          nullable: true
+        notes:
+          type: string
+
+    LandParcel:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        location:
+          type: string
+        area_acres:
+          type: number
+          nullable: true
+        cost_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        fsi:
+          type: number
+          nullable: true
+        source:
+          type: string
+          nullable: true
+        source_url:
+          type: string
+          nullable: true
+        source_verified_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Set only after a real reachability check against source_url succeeded — never on creation, never guessed.
+        district:
+          type: string
+          nullable: true
+        taluka:
+          type: string
+          nullable: true
+        village:
+          type: string
+          nullable: true
+        closed_price_rupees:
+          type: integer
+          format: int64
+          nullable: true
+          description: The real, final transacted price once a deal closes — distinct from cost_rupees (an asking price). See docs/adr/0005.
+        closed_at:
+          type: string
+          format: date-time
+          nullable: true
+        stage:
+          $ref: "#/components/schemas/LandParcelStage"
+        notes:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ListClosedTransactionsResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+        transactions:
+          type: array
+          items:
+            type: object
+            properties:
+              area_acres:
+                type: number
+              closed_price_rupees:
+                type: integer
+                format: int64
+              closed_at:
+                type: string
+                format: date-time
+
+    VerifySourceResponse:
+      type: object
+      required: [reachable, status_code]
+      properties:
+        reachable:
+          type: boolean
+        status_code:
+          type: integer
+        parcel:
+          $ref: "#/components/schemas/LandParcel"
+
+    UpsertFeasibilityAssessmentRequest:
+      type: object
+      required: [current_valuation_rupees, future_valuation_rupees, future_valuation_year, verdict]
+      properties:
+        current_valuation_rupees:
+          type: integer
+          format: int64
+        future_valuation_rupees:
+          type: integer
+          format: int64
+        future_valuation_year:
+          type: integer
+        verdict:
+          type: string
+        compared_parcel_id:
+          type: string
+          format: uuid
+          nullable: true
+        margin_pct:
+          type: number
+          nullable: true
+        infrastructure_note:
+          type: string
+        comparable_sales_note:
+          type: string
+
+    FeasibilityAssessment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        land_parcel_id:
+          type: string
+          format: uuid
+        current_valuation_rupees:
+          type: integer
+          format: int64
+        future_valuation_rupees:
+          type: integer
+          format: int64
+        future_valuation_year:
+          type: integer
+        verdict:
+          type: string
+        compared_parcel_id:
+          type: string
+          format: uuid
+          nullable: true
+        margin_pct:
+          type: number
+          nullable: true
+        infrastructure_note:
+          type: string
+        comparable_sales_note:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PlannedInfrastructureList:
+      type: object
+      properties:
+        location:
+          nullable: true
+          description: where the app resolved the parcel's free-text location to; null when it couldn't
+          type: object
+          properties:
+            display_name:
+              type: string
+            matched_query:
+              type: string
+              description: the text that actually matched — shorter than the parcel's location when only part of it was found
+            latitude:
+              type: number
+            longitude:
+              type: number
+        radius_km:
+          type: number
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlannedInfrastructureItem"
+
+    PlannedInfrastructureItem:
+      type: object
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [metro, suburban_rail, highway, road, airport, other]
+        status:
+          type: string
+          enum: [planned, under_construction, partially_operational, operational]
+        expected_completion:
+          type: string
+          description: free text, may be a range; empty when unknown
+        description:
+          type: string
+        area_note:
+          type: string
+          description: how the project serves this parcel's taluka, e.g. which stations fall in it
+        match_basis:
+          type: string
+          enum: [distance, taluka, location_text, resolved_area]
+        distance_km:
+          type: number
+          nullable: true
+          description: straight-line km to the nearest located point (distance matches only)
+        nearest_point:
+          nullable: true
+          type: object
+          properties:
+            label:
+              type: string
+            kind:
+              type: string
+              enum: [station, route]
+            coord_source:
+              type: string
+              enum: [official_file, approximate, manual]
+        source_name:
+          type: string
+        source_url:
+          type: string
+        verified_at:
+          type: string
+          format: date-time
+        verified_by:
+          type: string
+
+    RiskLevel:
+      type: string
+      enum: [low, medium, high]
+
+    OwnershipChainEntry:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        is_final:
+          type: boolean
+
+    EncumbranceSearchItem:
+      type: object
+      properties:
+        search_type:
+          type: string
+        completed:
+          type: boolean
+
+    RERAHistoryEntry:
+      type: object
+      properties:
+        project_name:
+          type: string
+        rera_registration_number:
+          type: string
+        delivery_status:
+          type: string
+
+    LegalDocument:
+      type: object
+      properties:
+        document_type:
+          type: string
+        status:
+          type: string
+          enum: [pending, received]
+
+    LegalCheckStatus:
+      type: string
+      enum: [in_progress, cleared]
+
+    UpsertLegalCheckRequest:
+      type: object
+      required: [ownership_risk, litigation_risk, encumbrance_risk, regulatory_risk]
+      properties:
+        ownership_risk:
+          $ref: "#/components/schemas/RiskLevel"
+        ownership_risk_note:
+          type: string
+        litigation_risk:
+          $ref: "#/components/schemas/RiskLevel"
+        litigation_risk_note:
+          type: string
+        encumbrance_risk:
+          $ref: "#/components/schemas/RiskLevel"
+        encumbrance_risk_note:
+          type: string
+        regulatory_risk:
+          $ref: "#/components/schemas/RiskLevel"
+        regulatory_risk_note:
+          type: string
+        ownership_chain:
+          type: array
+          items:
+            $ref: "#/components/schemas/OwnershipChainEntry"
+        encumbrance_searches:
+          type: array
+          items:
+            $ref: "#/components/schemas/EncumbranceSearchItem"
+        search_summary_note:
+          type: string
+        rera_history:
+          type: array
+          items:
+            $ref: "#/components/schemas/RERAHistoryEntry"
+        rera_history_summary_note:
+          type: string
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/LegalDocument"
+        status:
+          $ref: "#/components/schemas/LegalCheckStatus"
+
+    LegalCheck:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        land_parcel_id:
+          type: string
+          format: uuid
+        ownership_risk:
+          $ref: "#/components/schemas/RiskLevel"
+        ownership_risk_note:
+          type: string
+        litigation_risk:
+          $ref: "#/components/schemas/RiskLevel"
+        litigation_risk_note:
+          type: string
+        encumbrance_risk:
+          $ref: "#/components/schemas/RiskLevel"
+        encumbrance_risk_note:
+          type: string
+        regulatory_risk:
+          $ref: "#/components/schemas/RiskLevel"
+        regulatory_risk_note:
+          type: string
+        ownership_chain:
+          type: array
+          items:
+            $ref: "#/components/schemas/OwnershipChainEntry"
+        encumbrance_searches:
+          type: array
+          items:
+            $ref: "#/components/schemas/EncumbranceSearchItem"
+        search_summary_note:
+          type: string
+        rera_history:
+          type: array
+          items:
+            $ref: "#/components/schemas/RERAHistoryEntry"
+        rera_history_summary_note:
+          type: string
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/LegalDocument"
+        status:
+          $ref: "#/components/schemas/LegalCheckStatus"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    SiteSummary:
+      type: object
+      properties:
+        land_parcel_id:
+          type: string
+          format: uuid
+        state:
+          type: string
+        free_text:
+          type: string
+        near_airport:
+          type: boolean
+        coastal_site:
+          type: boolean
+        significant_tree_cover:
+          type: boolean
+        uses_groundwater:
+          type: boolean
+        unit_count:
+          type: integer
+
+    ApprovalStatus:
+      type: string
+      enum: [not_applicable, not_started, submitted, approved, not_yet_due]
+
+    LandParcelApproval:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        land_parcel_id:
+          type: string
+          format: uuid
+        approval_playbook_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/ApprovalStatus"
+        submitted_at:
+          type: string
+          format: date-time
+          nullable: true
+        sequence_order:
+          type: integer
+        approval_name:
+          type: string
+        description:
+          type: string
+        applicability_condition:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TenureType:
+      type: string
+      enum: [outright, jda]
+
+    UpsertLandTenureRequest:
+      type: object
+      required: [tenure_type]
+      properties:
+        tenure_type:
+          $ref: "#/components/schemas/TenureType"
+        jda_model:
+          type: string
+        developer_area_share_pct:
+          type: number
+          nullable: true
+        cash_on_top_of_share:
+          type: boolean
+          nullable: true
+        refundable_security_deposit_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        jda_stamp_duty_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        gst_reverse_charge_applicable:
+          type: boolean
+          nullable: true
+        landowner_is_co_promoter:
+          type: boolean
+          nullable: true
+
+    LandTenure:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        tenure_type:
+          $ref: "#/components/schemas/TenureType"
+        jda_model:
+          type: string
+        developer_area_share_pct:
+          type: number
+          nullable: true
+        landowner_area_share_pct:
+          type: number
+          nullable: true
+        cash_on_top_of_share:
+          type: boolean
+          nullable: true
+        refundable_security_deposit_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        jda_stamp_duty_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        gst_reverse_charge_applicable:
+          type: boolean
+          nullable: true
+        landowner_is_co_promoter:
+          type: boolean
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    UpsertFinancialStructureRequest:
+      type: object
+      properties:
+        buyer_collections_rupees:
+          type: integer
+          format: int64
+        promoter_equity_rupees:
+          type: integer
+          format: int64
+        construction_finance_rupees:
+          type: integer
+          format: int64
+        construction_use_rupees:
+          type: integer
+          format: int64
+        land_use_rupees:
+          type: integer
+          format: int64
+        approvals_use_rupees:
+          type: integer
+          format: int64
+        marketing_use_rupees:
+          type: integer
+          format: int64
+        working_capital_use_rupees:
+          type: integer
+          format: int64
+
+    FinancialStructure:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        buyer_collections_rupees:
+          type: integer
+          format: int64
+        promoter_equity_rupees:
+          type: integer
+          format: int64
+        construction_finance_rupees:
+          type: integer
+          format: int64
+        construction_use_rupees:
+          type: integer
+          format: int64
+        land_use_rupees:
+          type: integer
+          format: int64
+        approvals_use_rupees:
+          type: integer
+          format: int64
+        marketing_use_rupees:
+          type: integer
+          format: int64
+        working_capital_use_rupees:
+          type: integer
+          format: int64
+        total_sources_rupees:
+          type: integer
+          format: int64
+        total_uses_rupees:
+          type: integer
+          format: int64
+        balanced:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    EscrowAccount:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        bank_balance_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        bank_source_name:
+          type: string
+        bank_synced_at:
+          type: string
+          format: date-time
+          nullable: true
+        developer_ledger_balance_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        mismatch:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    SignRequest:
+      type: object
+      required: [signed_by]
+      properties:
+        signed_by:
+          type: string
+
+    TowerCost:
+      type: object
+      properties:
+        tower_name:
+          type: string
+        amount_rupees:
+          type: integer
+          format: int64
+
+    DraftStatus:
+      type: string
+      enum: [draft, signed]
+
+    EngineerDraft:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        cost_by_tower:
+          type: array
+          items:
+            $ref: "#/components/schemas/TowerCost"
+        total_incurred_rupees:
+          type: integer
+          format: int64
+        committed_not_reflected_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        source_note:
+          type: string
+        status:
+          $ref: "#/components/schemas/DraftStatus"
+        signed_by:
+          type: string
+        signed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    ArchitectCertificateStatus:
+      type: string
+      enum: [awaiting_site_visit, certified]
+
+    ArchitectCertificate:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        completion_pct:
+          type: number
+          nullable: true
+        site_visit_scheduled_at:
+          type: string
+          format: date-time
+          nullable: true
+        site_visit_completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          $ref: "#/components/schemas/ArchitectCertificateStatus"
+        signed_by:
+          type: string
+        signed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    CADraft:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        collected_from_buyers_rupees:
+          type: integer
+          format: int64
+        required_escrow_pct:
+          type: number
+        required_to_escrow_rupees:
+          type: integer
+          format: int64
+        actually_routed_to_escrow_rupees:
+          type: integer
+          format: int64
+        routing_compliant:
+          type: boolean
+        source_note:
+          type: string
+        status:
+          $ref: "#/components/schemas/DraftStatus"
+        signed_by:
+          type: string
+        signed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    CertificationPacket:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        period_year:
+          type: integer
+        period_quarter:
+          type: integer
+        sent_to_professionals_at:
+          type: string
+          format: date-time
+          nullable: true
+        engineer_draft:
+          $ref: "#/components/schemas/EngineerDraft"
+        architect_certificate:
+          $ref: "#/components/schemas/ArchitectCertificate"
+        ca_draft:
+          $ref: "#/components/schemas/CADraft"
+        withdrawal_eligible:
+          type: boolean
+
+    UpsertLenderCovenantRequest:
+      type: object
+      required: [dscr, dscr_covenant_min, security_cover_ratio, security_cover_covenant_min, next_tpa_report_due_at]
+      properties:
+        dscr:
+          type: number
+        dscr_covenant_min:
+          type: number
+        security_cover_ratio:
+          type: number
+        security_cover_covenant_min:
+          type: number
+        next_tpa_report_due_at:
+          type: string
+          format: date-time
+
+    LenderCovenant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        dscr:
+          type: number
+        dscr_covenant_min:
+          type: number
+        dscr_breached:
+          type: boolean
+        security_cover_ratio:
+          type: number
+        security_cover_covenant_min:
+          type: number
+        security_cover_breached:
+          type: boolean
+        any_breach:
+          type: boolean
+        next_tpa_report_due_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ConnectionStatus:
+      type: string
+      enum: [connected, not_connected]
+
+    SystemConnection:
+      type: object
+      properties:
+        system_name:
+          type: string
+        status:
+          $ref: "#/components/schemas/ConnectionStatus"
+
+    UpsertAccountingSyncRequest:
+      type: object
+      properties:
+        connections:
+          type: array
+          items:
+            $ref: "#/components/schemas/SystemConnection"
+        last_sync_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_sync_vouchers_posted:
+          type: integer
+          nullable: true
+        last_sync_vouchers_rejected:
+          type: integer
+          nullable: true
+
+    AccountingSync:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        connections:
+          type: array
+          items:
+            $ref: "#/components/schemas/SystemConnection"
+        last_sync_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_sync_vouchers_posted:
+          type: integer
+          nullable: true
+        last_sync_vouchers_rejected:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    FilingStatus:
+      type: string
+      enum: [not_started, draft, filed]
+
+    UpsertGSTFilingRequest:
+      type: object
+      required: [period_year, period_quarter]
+      properties:
+        period_year:
+          type: integer
+        period_quarter:
+          type: integer
+        gstr1_status:
+          $ref: "#/components/schemas/FilingStatus"
+        gstr1_filed_late:
+          type: boolean
+          nullable: true
+        gstr3b_status:
+          $ref: "#/components/schemas/FilingStatus"
+        gstr3b_due_at:
+          type: string
+          format: date-time
+          nullable: true
+        itc_claimed_rupees:
+          type: integer
+          format: int64
+        exempt_turnover_ratio_pct:
+          type: number
+          nullable: true
+        common_itc_reversal_rupees:
+          type: integer
+          format: int64
+          nullable: true
+
+    GSTFiling:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        period_year:
+          type: integer
+        period_quarter:
+          type: integer
+        gstr1_status:
+          $ref: "#/components/schemas/FilingStatus"
+        gstr1_filed_late:
+          type: boolean
+          nullable: true
+        gstr3b_status:
+          $ref: "#/components/schemas/FilingStatus"
+        gstr3b_due_at:
+          type: string
+          format: date-time
+          nullable: true
+        itc_claimed_rupees:
+          type: integer
+          format: int64
+        exempt_turnover_ratio_pct:
+          type: number
+          nullable: true
+        common_itc_reversal_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TDSDepositStatus:
+      type: string
+      enum: [deposited, pending_deposit]
+
+    TDSProfessionalDeduction:
+      type: object
+      properties:
+        payee_name:
+          type: string
+        amount_rupees:
+          type: integer
+          format: int64
+        deposit_status:
+          $ref: "#/components/schemas/TDSDepositStatus"
+        deposit_due_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    UpsertTDSFilingRequest:
+      type: object
+      required: [period_year, period_quarter]
+      properties:
+        period_year:
+          type: integer
+        period_quarter:
+          type: integer
+        form26q_status:
+          $ref: "#/components/schemas/FilingStatus"
+        form26q_due_at:
+          type: string
+          format: date-time
+          nullable: true
+        section194c_deducted_rupees:
+          type: integer
+          format: int64
+        section194j_deducted_rupees:
+          type: integer
+          format: int64
+        section194j_by_professional:
+          type: array
+          items:
+            $ref: "#/components/schemas/TDSProfessionalDeduction"
+
+    TDSFiling:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        period_year:
+          type: integer
+        period_quarter:
+          type: integer
+        form26q_status:
+          $ref: "#/components/schemas/FilingStatus"
+        form26q_due_at:
+          type: string
+          format: date-time
+          nullable: true
+        section194c_deducted_rupees:
+          type: integer
+          format: int64
+        section194j_deducted_rupees:
+          type: integer
+          format: int64
+        section194j_by_professional:
+          type: array
+          items:
+            $ref: "#/components/schemas/TDSProfessionalDeduction"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TPAReportStatus:
+      type: string
+      enum: [draft, submitted]
+
+    UpsertTPAReportRequest:
+      type: object
+      required:
+        - lender_name
+        - template_version
+        - period_year
+        - period_quarter
+        - units_total
+      properties:
+        lender_name:
+          type: string
+        template_version:
+          type: string
+        period_year:
+          type: integer
+        period_quarter:
+          type: integer
+        physical_progress_pct:
+          type: number
+          format: double
+        cost_incurred_rupees:
+          type: integer
+          format: int64
+        dscr:
+          type: number
+          format: double
+        security_cover_ratio:
+          type: number
+          format: double
+        units_sold:
+          type: integer
+        units_total:
+          type: integer
+
+    TPAReport:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        lender_name:
+          type: string
+        template_version:
+          type: string
+        period_year:
+          type: integer
+        period_quarter:
+          type: integer
+        physical_progress_pct:
+          type: number
+          format: double
+        cost_incurred_rupees:
+          type: integer
+          format: int64
+        dscr:
+          type: number
+          format: double
+        security_cover_ratio:
+          type: number
+          format: double
+        units_sold:
+          type: integer
+        units_total:
+          type: integer
+        sales_velocity_pct:
+          type: number
+          format: double
+        status:
+          $ref: "#/components/schemas/TPAReportStatus"
+        submitted_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    LitigationCaseType:
+      type: string
+      enum: [rera_tribunal, consumer_court, arbitration]
+
+    LitigationCounterpartyType:
+      type: string
+      enum: [buyer, contractor]
+
+    LitigationCaseStatus:
+      type: string
+      enum: [open, in_progress, closed]
+
+    CreateLitigationCaseRequest:
+      type: object
+      required:
+        - case_type
+        - counterparty_type
+        - forum
+        - subject
+      properties:
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+        case_type:
+          $ref: "#/components/schemas/LitigationCaseType"
+        counterparty_type:
+          $ref: "#/components/schemas/LitigationCounterpartyType"
+        counterparty_name:
+          type: string
+          nullable: true
+        forum:
+          type: string
+        subject:
+          type: string
+        next_hearing_at:
+          type: string
+          format: date-time
+          nullable: true
+        claimed_amount_rupees:
+          type: integer
+          format: int64
+          nullable: true
+
+    UpdateLitigationCaseStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          $ref: "#/components/schemas/LitigationCaseStatus"
+        resolution_note:
+          type: string
+          nullable: true
+
+    LitigationCase:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        org_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+        case_type:
+          $ref: "#/components/schemas/LitigationCaseType"
+        counterparty_type:
+          $ref: "#/components/schemas/LitigationCounterpartyType"
+        counterparty_name:
+          type: string
+          nullable: true
+        forum:
+          type: string
+        subject:
+          type: string
+        status:
+          $ref: "#/components/schemas/LitigationCaseStatus"
+        next_hearing_at:
+          type: string
+          format: date-time
+          nullable: true
+        claimed_amount_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        resolution_note:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    RiskCategory:
+      type: string
+      enum: [legal_title, regulatory, financial, contractor_execution, market]
+
+    RiskStatus:
+      type: string
+      enum: [clear, flagged, on_track]
+
+    UpsertRiskRegisterEntryRequest:
+      type: object
+      required:
+        - category
+        - status
+        - headline
+        - detail
+      properties:
+        category:
+          $ref: "#/components/schemas/RiskCategory"
+        status:
+          $ref: "#/components/schemas/RiskStatus"
+        headline:
+          type: string
+        detail:
+          type: string
+
+    RiskRegisterEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        category:
+          $ref: "#/components/schemas/RiskCategory"
+        status:
+          $ref: "#/components/schemas/RiskStatus"
+        headline:
+          type: string
+        detail:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateTenderRequest:
+      type: object
+      required:
+        - trade_package
+      properties:
+        trade_package:
+          type: string
+
+    Tender:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        trade_package:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TenderBidTechnicalStatus:
+      type: string
+      enum: [qualified, disqualified, pending]
+
+    CreateTenderBidRequest:
+      type: object
+      required:
+        - contractor_name
+      properties:
+        contractor_name:
+          type: string
+        past_jobs_with_developer:
+          type: integer
+        past_performance_note:
+          type: string
+        technical_bid_status:
+          $ref: "#/components/schemas/TenderBidTechnicalStatus"
+        financial_bid_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        recommended:
+          type: boolean
+
+    UpdateTenderBidRequest:
+      type: object
+      required:
+        - technical_bid_status
+      properties:
+        technical_bid_status:
+          $ref: "#/components/schemas/TenderBidTechnicalStatus"
+        financial_bid_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        recommended:
+          type: boolean
+
+    TenderBid:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tender_id:
+          type: string
+          format: uuid
+        contractor_name:
+          type: string
+        past_jobs_with_developer:
+          type: integer
+        past_performance_note:
+          type: string
+        technical_bid_status:
+          $ref: "#/components/schemas/TenderBidTechnicalStatus"
+        financial_bid_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        recommended:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    MasterScheduleMilestoneType:
+      type: string
+      enum:
+        - land_acquisition
+        - approvals
+        - construction_start
+        - structure_complete
+        - committed_possession_date
+
+    MasterScheduleMilestoneStatus:
+      type: string
+      enum: [complete, in_progress, pending]
+
+    CreateMilestoneRequest:
+      type: object
+      required:
+        - milestone_type
+        - status
+        - target_date
+      properties:
+        milestone_type:
+          $ref: "#/components/schemas/MasterScheduleMilestoneType"
+        status:
+          $ref: "#/components/schemas/MasterScheduleMilestoneStatus"
+        target_date:
+          type: string
+          format: date
+
+    CreateMasterScheduleRequest:
+      type: object
+      required:
+        - milestones
+      properties:
+        milestones:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateMilestoneRequest"
+
+    UpdateMasterScheduleMilestoneRequest:
+      type: object
+      required:
+        - status
+        - target_date
+      properties:
+        status:
+          $ref: "#/components/schemas/MasterScheduleMilestoneStatus"
+        target_date:
+          type: string
+          format: date
+
+    MasterScheduleMilestone:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        milestone_type:
+          $ref: "#/components/schemas/MasterScheduleMilestoneType"
+        status:
+          $ref: "#/components/schemas/MasterScheduleMilestoneStatus"
+        target_date:
+          type: string
+          format: date
+
+    MasterSchedule:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
+        milestones:
+          type: array
+          items:
+            $ref: "#/components/schemas/MasterScheduleMilestone"
+
+    AuditLogEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        table_name:
+          type: string
+        row_id:
+          type: string
+          format: uuid
+        action:
+          type: string
+          enum: [insert, update, delete]
+        actor:
+          type: string
+        old_data:
+          type: object
+          nullable: true
+          additionalProperties: true
+        new_data:
+          type: object
+          nullable: true
+          additionalProperties: true
+        changed_at:
+          type: string
+          format: date-time
+
+    StringList:
+      type: object
+      properties:
+        values:
+          type: array
+          items:
+            type: string
+
+    AILandValueEstimate:
+      type: object
+      properties:
+        location:
+          type: string
+        area_acres:
+          type: number
+        estimated_rate_per_acre_rupees:
+          type: integer
+          format: int64
+        estimated_total_value_rupees:
+          type: integer
+          format: int64
+        reasoning:
+          type: string
+        confidence:
+          type: string
+        model:
+          type: string
+        generated_at:
+          type: string
+          format: date-time
+        used_ready_reckoner_rate:
+          type: boolean
+          description: true when the model was given this village's government Ready Reckoner rate (looked up server-side) as a grounding floor
+
+    VillageMatchList:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              district:
+                type: string
+              taluka:
+                type: string
+              village:
+                type: string
+
+    LocationValueEstimate:
+      type: object
+      properties:
+        district:
+          type: string
+        taluka:
+          type: string
+        village:
+          type: string
+        zone_no:
+          type: string
+        rate_per_sqm_rupees:
+          type: integer
+          format: int64
+        effective_year:
+          type: string
+        source_url:
+          type: string
+        verified_at:
+          type: string
+          format: date-time
+        area_sqm:
+          type: number
+        estimated_value_rupees:
+          type: integer
+          format: int64
