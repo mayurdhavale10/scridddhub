@@ -54,6 +54,28 @@ func TestParseInfraExtraction_PlacesAsBareStrings(t *testing.T) {
 	}
 }
 
+func TestExtractDiscoveredURLs(t *testing.T) {
+	raw := []byte(`{"choices":[{"message":{
+		"content":"Official pages:\nhttps://mmrda.maharashtra.gov.in/en/projects/transport/metro-line-9/overview.\n【1†https://www.magicbricks.com/x】",
+		"executed_tools":[{"type":"browser_search","search_results":{"results":[
+			{"title":"VVCMC ring road","url":"https://vvcmc.gov.in/projects/ring-road"},
+			{"title":"dup","url":"https://mmrda.maharashtra.gov.in/en/projects/transport/metro-line-9/overview"}]}}]}}]}`)
+	got := ExtractDiscoveredURLs(raw)
+	want := map[string]bool{
+		"https://mmrda.maharashtra.gov.in/en/projects/transport/metro-line-9/overview": true,
+		"https://www.magicbricks.com/x":           true, // collected here; FilterOfficial drops it later
+		"https://vvcmc.gov.in/projects/ring-road": true,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("want %d unique URLs, got %v", len(want), got)
+	}
+	for _, u := range got {
+		if !want[u] {
+			t.Errorf("unexpected URL %q (trailing punctuation or citation marks not stripped?)", u)
+		}
+	}
+}
+
 func TestRateLimitWait(t *testing.T) {
 	// Real message from the 2026-09-27 dry run.
 	err := errors.New("groq API error: Rate limit reached for model `openai/gpt-oss-120b` ... Please try again in 4.14s. Need more tokens?")
@@ -66,6 +88,14 @@ func TestRateLimitWait(t *testing.T) {
 	}
 	if _, ok := rateLimitWait(nil); ok {
 		t.Error("nil is not a rate limit")
+	}
+	// Real message from 2026-09-27: the daily cap is not retryable by waiting minutes.
+	daily := errors.New("groq API error: Rate limit reached for model `openai/gpt-oss-120b` ... on tokens per day (TPD): Limit 200000, Used 199583, Requested 950. Please try again in 3m50.25s.")
+	if _, ok := rateLimitWait(daily); ok {
+		t.Error("daily quota must not be treated as a short retry")
+	}
+	if !isDailyQuota(daily) {
+		t.Error("daily quota must be recognised")
 	}
 }
 

@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
-	"strings"
 )
 
 // Pipeline wires the stages together. Every dependency is an interface so the whole run can be
@@ -21,14 +22,20 @@ type Pipeline struct {
 	Locator   Locator
 	Policy    PublishPolicy
 	Logf      func(format string, args ...any)
+	// IsFatal reports an error that should end the run early (e.g. the LLM's daily quota is used
+	// up) — everything extracted so far is still stored. nil = never.
+	IsFatal func(error) bool
 }
 
 type RunOptions struct {
 	Trigger   RunTrigger
 	Agency    string // "" = all agencies
 	SourceURL string // "" = all enabled sources; otherwise only this one
-	DryRun    bool   // fetch/extract/verify/locate and report, but write nothing
-	Force     bool   // re-extract even when a page's content hash is unchanged
+	// SourceURLs limits the run to these registered sources (e.g. ones just discovered for an
+	// area). Ignored when empty.
+	SourceURLs []string
+	DryRun     bool // fetch/extract/verify/locate and report, but write nothing
+	Force      bool // re-extract even when a page's content hash is unchanged
 	// MaxDiscovered caps how many newly discovered project pages one run follows.
 	MaxDiscovered int
 }
@@ -81,6 +88,13 @@ func (p *Pipeline) Run(ctx context.Context, opts RunOptions) (RunResult, error) 
 			return res, fmt.Errorf("source %q is not an enabled registry entry", opts.SourceURL)
 		}
 	}
+	if len(opts.SourceURLs) > 0 {
+		var picked []Source
+		for _, u := range opts.SourceURLs {
+			picked = append(picked, filterSources(sources, u)...)
+		}
+		sources = picked
+	}
 
 	var runID = uuid.Nil
 	if !opts.DryRun {
@@ -101,6 +115,7 @@ func (p *Pipeline) Run(ctx context.Context, opts RunOptions) (RunResult, error) 
 	discovered := 0
 
 	var runErr error
+sourceLoop:
 	for i := 0; i < len(sources); i++ {
 		if ctx.Err() != nil {
 			runErr = ctx.Err()
@@ -162,6 +177,11 @@ func (p *Pipeline) Run(ctx context.Context, opts RunOptions) (RunResult, error) 
 		if err != nil {
 			res.Stats.Errors++
 			p.logf("ERROR    %s — extract: %v", src.URL, err)
+			if p.IsFatal != nil && p.IsFatal(err) {
+				runErr = err
+				p.logf("STOP     ending run early; storing what was extracted so far")
+				break sourceLoop
+			}
 			continue
 		}
 
@@ -199,12 +219,23 @@ func (p *Pipeline) Run(ctx context.Context, opts RunOptions) (RunResult, error) 
 			if strings.TrimSpace(src.ProjectHint) != "" && len(ext.Projects) == 1 {
 				key = CanonicalKey(src.Agency, src.ProjectHint)
 			}
+			if key == "" {
+				res.Skipped = append(res.Skipped, fmt.Sprintf("%q on %s: name has no Latin letters or digits to key it by", ep.Name, src.URL))
+				p.logf("SKIP     %q on %s — can't key a name with no Latin letters/digits", ep.Name, src.URL)
+				continue
+			}
 			c := getCandidate(cands, &order, key, src.Agency)
 			mergeVerified(&c.vp, vp)
 			c.sources = append(c.sources, ProjectSourceRef{SourceID: src.ID, SourceURL: page.FinalURL, FetchID: fetchID, FieldEvidence: vp.FieldEvidence})
 			p.logf("extract  %q from %s — kept %d, rejected %d", ep.Name, src.URL, len(vp.FieldEvidence), len(vp.Rejected))
 		}
 	}
+
+	// Store what was gathered even if the run was cut short (time budget, quota): the storing
+	// phase gets a context that isn't already cancelled, bounded so it can't hang.
+	storeCtx, cancelStore := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
+	defer cancelStore()
+	ctx = storeCtx
 
 	for _, key := range order {
 		c := cands[key]

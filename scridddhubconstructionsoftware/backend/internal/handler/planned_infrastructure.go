@@ -46,10 +46,19 @@ type plannedInfrastructureItem struct {
 	VerifiedBy         string        `json:"verified_by"`
 }
 
+type coverageInfo struct {
+	Status         string  `json:"status"` // queued | searching | searched | failed
+	LastSearchedAt *string `json:"last_searched_at"`
+	ProjectsFound  int     `json:"projects_found"`
+}
+
 type plannedInfrastructureResponse struct {
 	Location *resolvedLocation           `json:"location"`
 	RadiusKm float64                     `json:"radius_km"`
 	Items    []plannedInfrastructureItem `json:"items"`
+	// Coverage is present when nothing on the list is measured within radius_km: whether this
+	// area is being searched for more (queued/searching) or already was (searched).
+	Coverage *coverageInfo `json:"coverage"`
 }
 
 func (h *PlannedInfrastructureHandler) ForParcel(w http.ResponseWriter, r *http.Request) {
@@ -90,6 +99,13 @@ func toPlannedInfrastructureResponse(res *usecase.PlannedInfrastructureResult) p
 	resp := plannedInfrastructureResponse{
 		RadiusKm: res.RadiusKm,
 		Items:    make([]plannedInfrastructureItem, 0, len(res.Matches)),
+	}
+	if c := res.Coverage; c != nil {
+		resp.Coverage = &coverageInfo{Status: c.Status, ProjectsFound: c.ProjectsFound}
+		if c.LastSearchedAt != nil {
+			s := c.LastSearchedAt.Format(timeFormat)
+			resp.Coverage.LastSearchedAt = &s
+		}
 	}
 	if res.Location != nil {
 		resp.Location = &resolvedLocation{

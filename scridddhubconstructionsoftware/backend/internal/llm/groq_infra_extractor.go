@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -159,9 +160,16 @@ const maxRateLimitRetries = 4
 
 var retryAfterRe = regexp.MustCompile(`try again in ([0-9.]+)s`)
 
+func isDailyQuota(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "tokens per day")
+}
+
 func (e *GroqInfraExtractor) complete(ctx context.Context, user string) (string, error) {
 	for attempt := 0; ; attempt++ {
 		content, err := e.completeOnce(ctx, user)
+		if isDailyQuota(err) {
+			return "", fmt.Errorf("%w: %v", ErrDailyQuota, err)
+		}
 		wait, limited := rateLimitWait(err)
 		if !limited || attempt >= maxRateLimitRetries {
 			return content, err
@@ -176,9 +184,15 @@ func (e *GroqInfraExtractor) complete(ctx context.Context, user string) (string,
 	}
 }
 
-// rateLimitWait reports whether err is a Groq rate-limit error and how long to wait before retrying.
+// ErrDailyQuota means Groq's tokens-per-day limit is used up (free tier: 200k/day on
+// gpt-oss-120b, hit on 2026-09-27). Waiting minutes won't help — a scheduled run should stop
+// cleanly and resume next time.
+var ErrDailyQuota = errors.New("groq daily token quota reached")
+
+// rateLimitWait reports whether err is a retryable (per-minute) Groq rate-limit error and how long
+// to wait. Daily-quota errors are NOT retryable here; see ErrDailyQuota.
 func rateLimitWait(err error) (time.Duration, bool) {
-	if err == nil || !strings.Contains(err.Error(), "Rate limit reached") {
+	if err == nil || !strings.Contains(err.Error(), "Rate limit reached") || isDailyQuota(err) {
 		return 0, false
 	}
 	wait := 10 * time.Second

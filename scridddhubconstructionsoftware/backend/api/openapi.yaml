@@ -2028,6 +2028,22 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PlannedInfrastructureItem"
+        coverage:
+          nullable: true
+          description: >-
+            Present when nothing on the list is measured within radius_km. The area (~5 km cell) is
+            queued for an on-demand search of official sources, being searched, or already searched.
+          type: object
+          properties:
+            status:
+              type: string
+              enum: [queued, searching, searched, failed]
+            last_searched_at:
+              type: string
+              format: date-time
+              nullable: true
+            projects_found:
+              type: integer
 
     PlannedInfrastructureItem:
       type: object

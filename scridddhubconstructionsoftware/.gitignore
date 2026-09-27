@@ -48,3 +48,7 @@ services/estimatedparcelvalue/pipeline/ml_experiments/**/*.jsonl
 # OS
 .DS_Store
 Thumbs.db
+
+# Scheduled pipeline run logs and build output
+logs/
+backend/bin/

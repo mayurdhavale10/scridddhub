@@ -3,6 +3,22 @@
 Owner: Mayur · Implementers: Claude (this repo session) + Codex · Written 2026-09-26
 Related: [README](README.md) · [ADR-0007](../../docs/adr/0007-planned-infrastructure-shared-verified-list-and-distance-matching.md) · [ADR-0006](../../docs/adr/0006-location-search-separated-from-valuation-model.md)
 
+## Status (2026-09-27)
+
+- **Step B (fill the database):** MMRDA done — 16 pages + Line 5 KML, 12 projects approved,
+  4 pending, 3 rejected (see REVIEW_GUIDE.md log). Other agencies not yet registered.
+- **Step C (on-demand fallback):** built. A lookup with nothing measured within 10 km records its
+  ~5 km area in `infrastructure_coverage` (migration 000032), wakes one background `AreaWorker`
+  in the server, and the app shows "Searching official sources…" / "Checked on <date>: nothing
+  planned". Discovery = Groq `browser_search` → URLs filtered to `infrastructure_official_domains`
+  → normal fetch/extract/verify. **Known issue:** on 2026-09-27 Groq browser_search failed every
+  time (daily quota, "Parsing failed", HTTP 524 timeout); failures are recorded and re-queued.
+  A dependable search backend is an open decision.
+- **Step D (scheduled runs):** built. `cmd/infra_pipeline --scheduled --max-duration 2h` searches
+  the queue then refreshes every source; stops cleanly on Groq's daily quota (free tier: 200k
+  tokens/day on gpt-oss-120b). `scripts/run_infra_pipeline.ps1` + `scripts/register_infra_schedule.ps1`
+  (Windows Task Scheduler, daily or weekly). Not yet registered — needs the owner's chosen time.
+
 ## 1. Goal
 
 Before launch, fill the database with the planned infrastructure of the **Mumbai Metropolitan

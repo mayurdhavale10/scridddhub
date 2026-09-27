@@ -128,6 +128,56 @@ func TestForLocation_ShowsEveryStatus(t *testing.T) {
 	}
 }
 
+type fakeCoverage struct {
+	requests []string
+	status   string
+}
+
+func (f *fakeCoverage) RequestCoverage(_ context.Context, cell, _ string, _, _ float64) (CoverageStatus, error) {
+	f.requests = append(f.requests, cell)
+	return CoverageStatus{Status: f.status}, nil
+}
+
+func TestForLocation_UncoveredAreaIsQueuedAndSearcherWoken(t *testing.T) {
+	g := &fakeGeocoder{known: map[string]domain.GeoPoint{"Vasai, Maharashtra": {Latitude: 19.39, Longitude: 72.83}}}
+	cov := &fakeCoverage{status: "queued"}
+	var woken []string
+	uc := NewPlannedInfrastructureUsecase(oneParcel{}, noProjects{}, g, &memCache{m: map[string]GeocodeResult{}}).
+		WithCoverage(cov, func(cell string) { woken = append(woken, cell) })
+
+	res, err := uc.ForLocation(context.Background(), domain.PropertyLocation{Text: "Vasai"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Coverage == nil || res.Coverage.Status != "queued" || len(cov.requests) != 1 || len(woken) != 1 {
+		t.Fatalf("uncovered area must be recorded and the searcher woken: cov=%+v requests=%v woken=%v", res.Coverage, cov.requests, woken)
+	}
+}
+
+func TestForLocation_AlreadySearchedAreaDoesNotWakeSearcher(t *testing.T) {
+	g := &fakeGeocoder{known: map[string]domain.GeoPoint{"Vasai, Maharashtra": {Latitude: 19.39, Longitude: 72.83}}}
+	cov := &fakeCoverage{status: "searched"}
+	woken := 0
+	uc := NewPlannedInfrastructureUsecase(oneParcel{}, noProjects{}, g, &memCache{m: map[string]GeocodeResult{}}).
+		WithCoverage(cov, func(string) { woken++ })
+	res, _ := uc.ForLocation(context.Background(), domain.PropertyLocation{Text: "Vasai"})
+	if res.Coverage == nil || res.Coverage.Status != "searched" || woken != 0 {
+		t.Fatalf("a searched area must report it and not search again: %+v woken=%d", res.Coverage, woken)
+	}
+}
+
+func TestForLocation_CoveredAreaIsNotRecorded(t *testing.T) {
+	g := &fakeGeocoder{known: map[string]domain.GeoPoint{"Khadakpada, Maharashtra": {Latitude: 19.2525, Longitude: 73.1374}}}
+	cov := &fakeCoverage{status: "queued"}
+	projects := fixedProjects{{Name: "Metro Line 5", Status: "under_construction",
+		Points: []domain.InfrastructurePoint{{Label: "Sahajanand Chowk", Latitude: 19.2446, Longitude: 73.1284}}}}
+	uc := NewPlannedInfrastructureUsecase(oneParcel{}, projects, g, &memCache{m: map[string]GeocodeResult{}}).WithCoverage(cov, nil)
+	res, _ := uc.ForLocation(context.Background(), domain.PropertyLocation{Text: "Khadakpada"})
+	if res.Coverage != nil || len(cov.requests) != 0 {
+		t.Fatalf("an area with a measured project nearby needs no search: %+v", res.Coverage)
+	}
+}
+
 func TestResolve_GeocoderErrorDegradesAndIsNotCached(t *testing.T) {
 	g := &fakeGeocoder{err: errors.New("HTTP 503")}
 	c := &memCache{m: map[string]GeocodeResult{}}

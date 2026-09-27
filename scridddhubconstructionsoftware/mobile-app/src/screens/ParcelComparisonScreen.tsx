@@ -49,6 +49,31 @@ const INFRA_STATUS_LABEL: Record<string, string> = {
   unknown: 'Planned / in progress',
 };
 
+type Coverage = NonNullable<PlannedInfrastructureList['coverage']>;
+
+// Step C: when nothing is measured nearby, say what's being done about it rather than a bare "none".
+function coverageText(c: Coverage, radiusKm: number | undefined): string {
+  const within = radiusKm ? ` within ${radiusKm} km` : '';
+  switch (c.status) {
+    case 'queued':
+    case 'searching':
+      return `Searching official sources for projects around here — check back later.`;
+    case 'searched':
+      // projects_found counts every project the search turned up, not only nearby ones — so it
+      // must not be described as "nearby" (they appear here once reviewed, if within range).
+      if ((c.projects_found ?? 0) > 0) {
+        const n = c.projects_found ?? 0;
+        const when = c.last_searched_at ? ` on ${formatDate(c.last_searched_at)}` : '';
+        return `Searched official sources${when}: ${n} new project${n === 1 ? '' : 's'} found, awaiting review. Nothing approved${within} yet.`;
+      }
+      return c.last_searched_at
+        ? `Checked official sources on ${formatDate(c.last_searched_at)}: nothing planned${within}.`
+        : `Checked official sources: nothing planned${within}.`;
+    default:
+      return `Couldn't search this area yet — it will be retried.`;
+  }
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // "26 Sep 2026" — formatted by hand because Hermes' Intl date support varies by build.
@@ -210,9 +235,14 @@ export function ParcelComparisonScreen({ parcelIds, onBack }: Props) {
                         {loaded.location.matched_query?.replace(/,\s*Maharashtra$/i, '')}” instead.
                       </Text>
                     ) : null}
-                    {items.length === 0 ? (
+                    {items.length === 0 && !loaded.coverage ? (
                       <Text style={styles.noteText}>
                         No approved projects on the list within {loaded.radius_km} km.
+                      </Text>
+                    ) : null}
+                    {loaded.coverage ? (
+                      <Text style={styles.noteText}>
+                        {coverageText(loaded.coverage, loaded.radius_km)}
                       </Text>
                     ) : null}
                   </>

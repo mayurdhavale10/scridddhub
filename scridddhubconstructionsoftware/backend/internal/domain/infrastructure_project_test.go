@@ -103,6 +103,20 @@ func TestMatch_UnresolvedLocationFallsBackToTaluka(t *testing.T) {
 	}
 }
 
+func TestCoverageCell(t *testing.T) {
+	key, centre := CoverageCell(GeoPoint{Latitude: 19.2525, Longitude: 73.1374}) // Khadakpada
+	if key != "19.25,73.10" {
+		t.Errorf("key %q, want 19.25,73.10", key)
+	}
+	if centre.Latitude < 19.27 || centre.Latitude > 19.28 || centre.Longitude < 73.12 || centre.Longitude > 73.13 {
+		t.Errorf("centre %+v should be the middle of the cell", centre)
+	}
+	// Two lookups a few hundred metres apart share an area.
+	if k2, _ := CoverageCell(GeoPoint{Latitude: 19.2560, Longitude: 73.1400}); k2 != key {
+		t.Errorf("nearby point landed in a different cell: %s vs %s", k2, key)
+	}
+}
+
 func TestMatch_NoMatch(t *testing.T) {
 	p := PropertyLocation{Text: "Godrej Hill, Khadakpada"}
 	if got := MatchPlannedInfrastructure(p, nil, "", testProjects, DefaultNearbyRadiusKm); len(got) != 0 {

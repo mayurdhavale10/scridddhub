@@ -55,13 +55,17 @@ func (s *InfraPipelineStore) ListEnabledSources(ctx context.Context, agency stri
 }
 
 func (s *InfraPipelineStore) AddDiscoveredSources(ctx context.Context, from uuid.UUID, agency string, found []infrapipeline.DiscoveredSource) (int, error) {
+	var fromArg any = from
+	if from == uuid.Nil {
+		fromArg = nil // found by area search, not linked from another registered page
+	}
 	added := 0
 	for _, d := range found {
 		tag, err := s.pool.Exec(ctx, `
 			INSERT INTO infrastructure_sources (agency, url, kind, discovered_from)
 			VALUES ($1, $2, $3, $4)
 			ON CONFLICT (url) DO NOTHING
-		`, agency, d.URL, string(d.Kind), from)
+		`, agency, d.URL, string(d.Kind), fromArg)
 		if err != nil {
 			return added, err
 		}
@@ -327,6 +331,52 @@ func (s *InfraPipelineStore) SetReview(ctx context.Context, key, status, reviewe
 	}
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("no project with key %q", key)
+	}
+	return nil
+}
+
+// ProjectPoint is one located point as a reviewer sees it.
+type ProjectPoint struct {
+	Label       string
+	Kind        string
+	Latitude    float64
+	Longitude   float64
+	CoordSource string
+}
+
+// ListPoints returns a project's points, south to north (the order most MMR lines run).
+func (s *InfraPipelineStore) ListPoints(ctx context.Context, key string) ([]ProjectPoint, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT pt.label, pt.kind, pt.latitude, pt.longitude, pt.coord_source
+		FROM infrastructure_project_points pt JOIN infrastructure_projects p ON p.id = pt.project_id
+		WHERE p.canonical_key = $1 ORDER BY pt.latitude
+	`, key)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ProjectPoint
+	for rows.Next() {
+		var p ProjectPoint
+		if err := rows.Scan(&p.Label, &p.Kind, &p.Latitude, &p.Longitude, &p.CoordSource); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// DropPoint removes one wrongly placed point from a project (review fix).
+func (s *InfraPipelineStore) DropPoint(ctx context.Context, key, label string) error {
+	tag, err := s.pool.Exec(ctx, `
+		DELETE FROM infrastructure_project_points
+		WHERE label = $2 AND project_id = (SELECT id FROM infrastructure_projects WHERE canonical_key = $1)
+	`, key, label)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("no point %q on project %q", label, key)
 	}
 	return nil
 }

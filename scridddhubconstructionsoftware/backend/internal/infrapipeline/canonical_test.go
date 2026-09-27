@@ -25,4 +25,7 @@ func TestCanonicalKey(t *testing.T) {
 	if got := CanonicalKey("MSRDC", "Versova–Bandra Sea Link"); got != "msrdc:versova bandra sea link" {
 		t.Errorf("got %q", got)
 	}
+	if got := CanonicalKey("MMRDA", "मुंबई पारबंदर प्रकल्प"); got != "" {
+		t.Errorf("a name with no Latin letters or digits must give no key, got %q", got)
+	}
 }

@@ -9,6 +9,8 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/scridddhub/backend/internal/geo"
 	"github.com/scridddhub/backend/internal/handler"
+	"github.com/scridddhub/backend/internal/infrapipeline"
+	infrasetup "github.com/scridddhub/backend/internal/infrapipeline/setup"
 	"github.com/scridddhub/backend/internal/llm"
 	"github.com/scridddhub/backend/internal/middleware"
 	"github.com/scridddhub/backend/internal/repository/postgres"
@@ -91,7 +93,26 @@ func main() {
 	pricingPoolHandler := handler.NewPricingPoolHandler(usecase.NewPricingPoolUsecase(pricingPoolRepo))
 	geographyHandler := handler.NewGeographyHandler(usecase.NewGeographyUsecase(geographyRepo))
 	aiLandEstimateHandler := handler.NewAILandEstimateHandler(usecase.NewAILandEstimateUsecase(landValueEstimator, readyReckonerRateRepo))
-	plannedInfrastructureHandler := handler.NewPlannedInfrastructureHandler(usecase.NewPlannedInfrastructureUsecase(landParcelRepo, infrastructureProjectRepo, geo.NewNominatimGeocoder(), postgres.NewGeocodeCacheRepository(pool)))
+	// Step C: a lookup of an area with nothing nearby on file queues it and wakes a single
+	// background worker that searches official sources for it (results land as pending/approved
+	// per INFRA_PUBLISH_POLICY). Set INFRA_ONDEMAND=off to only queue (the scheduled job still
+	// searches the queue) — e.g. to keep the LLM's daily quota for scheduled runs.
+	plannedInfrastructureUC := usecase.NewPlannedInfrastructureUsecase(landParcelRepo, infrastructureProjectRepo, geo.NewNominatimGeocoder(), postgres.NewGeocodeCacheRepository(pool))
+	infraBuilt, err := infrasetup.New(pool, groqAPIKey, "", log.Printf)
+	if err != nil {
+		log.Fatalf("setting up infrastructure pipeline: %v", err)
+	}
+	var wakeAreaWorker func(string)
+	if os.Getenv("INFRA_ONDEMAND") != "off" {
+		areaWorker := infrapipeline.NewAreaWorker(infraBuilt.Pipeline, infraBuilt.Store, infraBuilt.Discoverer)
+		go areaWorker.Run(ctx)
+		wakeAreaWorker = func(cell string) {
+			log.Printf("area %s queued for an on-demand infrastructure search", cell)
+			areaWorker.Wake()
+		}
+	}
+	plannedInfrastructureUC.WithCoverage(infraBuilt.Store, wakeAreaWorker)
+	plannedInfrastructureHandler := handler.NewPlannedInfrastructureHandler(plannedInfrastructureUC)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {

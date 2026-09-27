@@ -245,6 +245,36 @@ type RunStats struct {
 	Pending   int `json:"pending"`
 }
 
+// ---------------------------------------------------------------------------------------------
+// Step C · On-demand discovery for uncovered areas
+// ---------------------------------------------------------------------------------------------
+
+// Discoverer finds candidate pages about infrastructure near a place, by web search. Its output
+// is only ever a list of URLs to consider: they are filtered to official domains, then fetched,
+// extracted and evidence-verified like any registered source. Search never supplies facts.
+type Discoverer interface {
+	// Discover returns candidate URLs about infrastructure near place. domains is the official
+	// allowlist; implementations that can filter by domain should (the caller filters again).
+	Discover(ctx context.Context, place string, domains []string) ([]string, error)
+}
+
+// CoverageArea is a ~5 km grid cell someone looked up with nothing nearby on file.
+type CoverageArea struct {
+	Cell      string
+	PlaceName string
+	Latitude  float64
+	Longitude float64
+}
+
+// CoverageStore tracks which areas have been searched (implemented over Postgres).
+type CoverageStore interface {
+	NextQueuedAreas(ctx context.Context, limit int) ([]CoverageArea, error)
+	MarkAreaSearching(ctx context.Context, cell string) error
+	FinishArea(ctx context.Context, cell, status string, sourcesFound, projectsFound int, errText string) error
+	// OfficialDomains returns the discovery allowlist: domain -> agency label.
+	OfficialDomains(ctx context.Context) (map[string]string, error)
+}
+
 // Store persists pipeline state (implemented over Postgres in repository/postgres).
 type Store interface {
 	ListEnabledSources(ctx context.Context, agency string) ([]Source, error)

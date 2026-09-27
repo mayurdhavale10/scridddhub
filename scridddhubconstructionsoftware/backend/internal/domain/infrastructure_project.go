@@ -3,6 +3,7 @@ package domain
 import (
 	"math"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -153,6 +154,18 @@ func sortByDistance(ms []PlannedInfrastructureMatch) {
 			ms[j], ms[j-1] = ms[j-1], ms[j]
 		}
 	}
+}
+
+// coverageCellDeg is the size of an on-demand search area: 0.05° ≈ 5.5 km in Mumbai.
+const coverageCellDeg = 0.05
+
+// CoverageCell buckets a point into its search area: the key ("19.25,73.15") and the cell's
+// centre. Nearby lookups share one area, so one search covers them all.
+func CoverageCell(p GeoPoint) (string, GeoPoint) {
+	lat := math.Floor(p.Latitude/coverageCellDeg)*coverageCellDeg + coverageCellDeg/2
+	lng := math.Floor(p.Longitude/coverageCellDeg)*coverageCellDeg + coverageCellDeg/2
+	key := strconv.FormatFloat(lat-coverageCellDeg/2, 'f', 2, 64) + "," + strconv.FormatFloat(lng-coverageCellDeg/2, 'f', 2, 64)
+	return key, GeoPoint{Latitude: lat, Longitude: lng}
 }
 
 // HaversineKm is the great-circle distance between two points — straight-line, not road distance.

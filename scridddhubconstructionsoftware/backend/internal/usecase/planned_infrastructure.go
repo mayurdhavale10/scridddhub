@@ -6,6 +6,7 @@ import (
 	"log"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/scridddhub/backend/internal/domain"
@@ -51,10 +52,31 @@ type PlannedInfrastructureUsecase struct {
 	projects InfrastructureProjectRepository
 	geocoder Geocoder
 	cache    GeocodeCache
+	coverage CoverageRecorder // optional (Step C); nil = no on-demand search
+	onQueued func(cell string)
 }
 
 func NewPlannedInfrastructureUsecase(parcels ParcelGetter, projects InfrastructureProjectRepository, geocoder Geocoder, cache GeocodeCache) *PlannedInfrastructureUsecase {
 	return &PlannedInfrastructureUsecase{parcels: parcels, projects: projects, geocoder: geocoder, cache: cache}
+}
+
+// CoverageStatus is what's known about searching an area for infrastructure (Step C).
+type CoverageStatus struct {
+	Status         string // queued | searching | searched | failed
+	LastSearchedAt *time.Time
+	ProjectsFound  int
+}
+
+// CoverageRecorder records lookups of areas with nothing nearby on file.
+type CoverageRecorder interface {
+	RequestCoverage(ctx context.Context, cell, place string, lat, lng float64) (CoverageStatus, error)
+}
+
+// WithCoverage enables Step C: an area with no measured project nearby is recorded, and onQueued
+// (e.g. waking a background searcher) is called when it's newly queued for searching.
+func (u *PlannedInfrastructureUsecase) WithCoverage(c CoverageRecorder, onQueued func(cell string)) *PlannedInfrastructureUsecase {
+	u.coverage, u.onQueued = c, onQueued
+	return u
 }
 
 type PlannedInfrastructureResult struct {
@@ -63,6 +85,9 @@ type PlannedInfrastructureResult struct {
 	Location *GeocodeResult
 	RadiusKm float64
 	Matches  []domain.PlannedInfrastructureMatch
+	// Coverage is set when nothing on the list is measured within RadiusKm of the location: it
+	// says whether this area is being searched for more (queued/searching) or already was.
+	Coverage *CoverageStatus
 }
 
 // ForParcel returns approved infrastructure near a saved parcel's location.
@@ -100,11 +125,39 @@ func (u *PlannedInfrastructureUsecase) ForLocation(ctx context.Context, place do
 		loc = nil
 	}
 
-	return &PlannedInfrastructureResult{
+	res := &PlannedInfrastructureResult{
 		Location: loc,
 		RadiusKm: domain.DefaultNearbyRadiusKm,
 		Matches:  domain.MatchPlannedInfrastructure(place, at, resolvedAddress, projects, domain.DefaultNearbyRadiusKm),
-	}, nil
+	}
+	if at != nil && u.coverage != nil && !hasDistanceMatch(res.Matches) {
+		res.Coverage = u.recordCoverage(ctx, *at, loc.DisplayName)
+	}
+	return res, nil
+}
+
+func hasDistanceMatch(ms []domain.PlannedInfrastructureMatch) bool {
+	for _, m := range ms {
+		if m.MatchBasis == domain.MatchBasisDistance {
+			return true
+		}
+	}
+	return false
+}
+
+// recordCoverage notes that this area has nothing measured nearby and, if it's newly queued,
+// wakes the background searcher. Failures never break the lookup itself.
+func (u *PlannedInfrastructureUsecase) recordCoverage(ctx context.Context, at domain.GeoPoint, place string) *CoverageStatus {
+	cell, centre := domain.CoverageCell(at)
+	st, err := u.coverage.RequestCoverage(ctx, cell, place, centre.Latitude, centre.Longitude)
+	if err != nil {
+		log.Printf("recording coverage request for %s: %v", cell, err)
+		return nil
+	}
+	if st.Status == "queued" && u.onQueued != nil {
+		u.onQueued(cell)
+	}
+	return &st
 }
 
 var spaces = regexp.MustCompile(`\s+`)

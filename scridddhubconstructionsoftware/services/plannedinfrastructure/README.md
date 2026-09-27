@@ -5,8 +5,12 @@ any typed location. Decision record: [ADR-0007](../../docs/adr/0007-planned-infr
 (builds on [ADR-0006](../../docs/adr/0006-location-search-separated-from-valuation-model.md):
 locations are resolved by geocoding, not name matching).
 
-**Status (2026-09-26):** phase 1 done — geocoding, distance matching, review gate, mobile section.
-Next: phase 2 (AI drafts MMR projects as `pending`), phase 3 (review screen to approve/reject).
+**Getting it running:** [RUNBOOK.md](RUNBOOK.md) — setup, daily startup, commands, schedule,
+limits, troubleshooting. **Approving projects:** [REVIEW_GUIDE.md](REVIEW_GUIDE.md).
+
+**Status (2026-09-27):** distance matching, source pipeline (Step B, MMRDA), on-demand search for
+uncovered areas via Exa (Step C) and a daily 1 PM scheduled run (Step D) are built and running.
+Next: more agencies, a review screen in the app. See PIPELINE_PLAN.md "Status".
 
 ## Architecture
 
