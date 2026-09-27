@@ -5,6 +5,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/scridddhub/backend/internal/geo"
@@ -13,6 +15,7 @@ import (
 	infrasetup "github.com/scridddhub/backend/internal/infrapipeline/setup"
 	"github.com/scridddhub/backend/internal/llm"
 	"github.com/scridddhub/backend/internal/middleware"
+	"github.com/scridddhub/backend/internal/osm"
 	"github.com/scridddhub/backend/internal/repository/postgres"
 	"github.com/scridddhub/backend/internal/usecase"
 )
@@ -112,6 +115,18 @@ func main() {
 		}
 	}
 	plannedInfrastructureUC.WithCoverage(infraBuilt.Store, wakeAreaWorker)
+	// Existing schools, hospitals, landfills, power lines... from OpenStreetMap (Overpass), cached
+	// per ~1 km cell. A cold area waits up to 12 s, then fills in on the next lookup.
+	// OVERPASS_URLS (comma-separated) adds or replaces endpoints; OSM_NEARBY=off disables it.
+	if os.Getenv("OSM_NEARBY") != "off" {
+		var endpoints []string
+		for _, u := range strings.Split(os.Getenv("OVERPASS_URLS"), ",") {
+			if u = strings.TrimSpace(u); u != "" {
+				endpoints = append(endpoints, u)
+			}
+		}
+		plannedInfrastructureUC.WithNearbyPlaces(osm.NewFinder(osm.NewOverpass(endpoints), postgres.NewOSMPlaceCache(pool), 12*time.Second))
+	}
 	plannedInfrastructureHandler := handler.NewPlannedInfrastructureHandler(plannedInfrastructureUC)
 
 	mux := http.NewServeMux()

@@ -21,7 +21,7 @@ func NewInfrastructureProjectRepository(pool *pgxpool.Pool) *InfrastructureProje
 // data, so matching happens in the domain layer rather than in SQL.
 func (r *InfrastructureProjectRepository) ListApproved(ctx context.Context) ([]domain.InfrastructureProject, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, name, kind, status, COALESCE(expected_completion, ''), description,
+		SELECT id, name, kind, category, status, COALESCE(expected_completion, ''), description,
 		       source_name, source_url, verified_at, verified_by
 		FROM infrastructure_projects
 		WHERE review_status = 'approved'
@@ -36,7 +36,7 @@ func (r *InfrastructureProjectRepository) ListApproved(ctx context.Context) ([]d
 	index := map[uuid.UUID]int{}
 	for rows.Next() {
 		var p domain.InfrastructureProject
-		if err := rows.Scan(&p.ID, &p.Name, &p.Kind, &p.Status, &p.ExpectedCompletion, &p.Description,
+		if err := rows.Scan(&p.ID, &p.Name, &p.Kind, &p.Category, &p.Status, &p.ExpectedCompletion, &p.Description,
 			&p.SourceName, &p.SourceURL, &p.VerifiedAt, &p.VerifiedBy); err != nil {
 			return nil, err
 		}

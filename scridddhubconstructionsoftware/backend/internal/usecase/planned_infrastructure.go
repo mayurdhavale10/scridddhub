@@ -54,6 +54,19 @@ type PlannedInfrastructureUsecase struct {
 	cache    GeocodeCache
 	coverage CoverageRecorder // optional (Step C); nil = no on-demand search
 	onQueued func(cell string)
+	nearby   NearbyPlaceFinder // optional; nil = no existing places
+}
+
+// NearbyPlaceFinder returns existing places (schools, hospitals, landfills...) around a point,
+// implemented by internal/osm. The usecase filters them by distance.
+type NearbyPlaceFinder interface {
+	Near(ctx context.Context, at domain.GeoPoint) ([]domain.NearbyPlace, error)
+}
+
+// WithNearbyPlaces adds existing places from OpenStreetMap alongside the planned projects.
+func (u *PlannedInfrastructureUsecase) WithNearbyPlaces(f NearbyPlaceFinder) *PlannedInfrastructureUsecase {
+	u.nearby = f
+	return u
 }
 
 func NewPlannedInfrastructureUsecase(parcels ParcelGetter, projects InfrastructureProjectRepository, geocoder Geocoder, cache GeocodeCache) *PlannedInfrastructureUsecase {
@@ -88,6 +101,9 @@ type PlannedInfrastructureResult struct {
 	// Coverage is set when nothing on the list is measured within RadiusKm of the location: it
 	// says whether this area is being searched for more (queued/searching) or already was.
 	Coverage *CoverageStatus
+	// Existing places already there (OpenStreetMap), nearest first; empty when the location
+	// couldn't be resolved or the lookup is still running.
+	Existing []domain.NearbyPlaceMatch
 }
 
 // ForParcel returns approved infrastructure near a saved parcel's location.
@@ -132,6 +148,14 @@ func (u *PlannedInfrastructureUsecase) ForLocation(ctx context.Context, place do
 	}
 	if at != nil && u.coverage != nil && !hasDistanceMatch(res.Matches) {
 		res.Coverage = u.recordCoverage(ctx, *at, loc.DisplayName)
+	}
+	if at != nil && u.nearby != nil {
+		// Existing places are a bonus: a lookup failure never breaks the planned list.
+		if places, err := u.nearby.Near(ctx, *at); err != nil {
+			log.Printf("finding existing places near %q: %v", place.Text, err)
+		} else {
+			res.Existing = domain.MatchNearbyPlaces(*at, places)
+		}
 	}
 	return res, nil
 }

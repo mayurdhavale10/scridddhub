@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/scridddhub/backend/internal/domain"
 	"github.com/scridddhub/backend/internal/infrapipeline"
 )
 
@@ -172,10 +173,8 @@ func (s *InfraPipelineStore) UpsertProject(ctx context.Context, cp infrapipeline
 	if p.ExpectedCompletion.Value != nil {
 		completion = p.ExpectedCompletion.Value
 	}
-	kind := p.Kind
-	if kind == "" {
-		kind = "other"
-	}
+	kind := domain.NormalizeKind(p.Kind)
+	category := domain.CategoryForKind(kind)
 	primary := primarySource(cp.Sources)
 	sourceName := cp.Agency + " — official project page"
 	description := composeDescription(p)
@@ -184,11 +183,11 @@ func (s *InfraPipelineStore) UpsertProject(ctx context.Context, cp infrapipeline
 	if !exists {
 		err = tx.QueryRow(ctx, `
 			INSERT INTO infrastructure_projects
-				(name, kind, status, expected_completion, description, source_name, source_url,
+				(name, kind, category, status, expected_completion, description, source_name, source_url,
 				 verified_at, verified_by, review_status, agency, canonical_key)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, now(), $8, $9, $10, $11)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), $9, $10, $11, $12)
 			RETURNING id
-		`, p.Name, kind, status, completion, description, sourceName, primary, pipelineVerifiedBy,
+		`, p.Name, kind, category, status, completion, description, sourceName, primary, pipelineVerifiedBy,
 			reviewStatus, cp.Agency, cp.Key).Scan(&id)
 		if err != nil {
 			return false, fmt.Errorf("inserting project: %w", err)
@@ -208,6 +207,7 @@ func (s *InfraPipelineStore) UpsertProject(ctx context.Context, cp infrapipeline
 		if name {
 			add("name", "name = $%d", p.Name)
 			add("kind", "kind = $%d", kind)
+			add("category", "category = $%d", category)
 			add("source_name", "source_name = $%d", sourceName)
 			if primary != "" {
 				add("source_url", "source_url = $%d", primary)

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -33,6 +34,7 @@ type plannedInfrastructureItem struct {
 	ProjectID          string        `json:"project_id"`
 	Name               string        `json:"name"`
 	Kind               string        `json:"kind"`
+	Category           string        `json:"category"`
 	Status             string        `json:"status"`
 	ExpectedCompletion string        `json:"expected_completion"`
 	Description        string        `json:"description"`
@@ -59,6 +61,16 @@ type plannedInfrastructureResponse struct {
 	// Coverage is present when nothing on the list is measured within radius_km: whether this
 	// area is being searched for more (queued/searching) or already was (searched).
 	Coverage *coverageInfo `json:"coverage"`
+	// Existing places already there (schools, hospitals, landfills...), from OpenStreetMap.
+	Existing []existingPlace `json:"existing"`
+}
+
+type existingPlace struct {
+	Name       string  `json:"name"`
+	Kind       string  `json:"kind"`
+	Category   string  `json:"category"`
+	DistanceKm float64 `json:"distance_km"`
+	SourceURL  string  `json:"source_url"`
 }
 
 func (h *PlannedInfrastructureHandler) ForParcel(w http.ResponseWriter, r *http.Request) {
@@ -99,6 +111,14 @@ func toPlannedInfrastructureResponse(res *usecase.PlannedInfrastructureResult) p
 	resp := plannedInfrastructureResponse{
 		RadiusKm: res.RadiusKm,
 		Items:    make([]plannedInfrastructureItem, 0, len(res.Matches)),
+		Existing: make([]existingPlace, 0, len(res.Existing)),
+	}
+	for _, m := range res.Existing {
+		p := m.Place
+		resp.Existing = append(resp.Existing, existingPlace{
+			Name: p.Name, Kind: p.Kind, Category: p.Category, DistanceKm: m.DistanceKm,
+			SourceURL: fmt.Sprintf("https://www.openstreetmap.org/%s/%d", p.OSMType, p.OSMID),
+		})
 	}
 	if c := res.Coverage; c != nil {
 		resp.Coverage = &coverageInfo{Status: c.Status, ProjectsFound: c.ProjectsFound}
@@ -121,6 +141,7 @@ func toPlannedInfrastructureResponse(res *usecase.PlannedInfrastructureResult) p
 			ProjectID:          p.ID.String(),
 			Name:               p.Name,
 			Kind:               p.Kind,
+			Category:           p.Category,
 			Status:             p.Status,
 			ExpectedCompletion: p.ExpectedCompletion,
 			Description:        p.Description,

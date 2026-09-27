@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/scridddhub/backend/internal/domain"
 	"github.com/scridddhub/backend/internal/infrapipeline"
 )
 
@@ -46,9 +48,12 @@ func NewGroqInfraExtractor(apiKey string) *GroqInfraExtractor {
 // beyond this is almost always boilerplate.
 const maxPageChars = 24000
 
-const infraExtractionSystemPrompt = `You extract facts about public infrastructure projects (metro
-lines, rail, roads, highways, bridges, tunnels, airports) from ONE page of an official Indian
-government agency website.
+const infraExtractionSystemPrompt = `You extract facts about public infrastructure projects from
+ONE page of an official Indian government agency website. That includes transport (metro, rail,
+roads, bridges, airports, jetties), jobs hubs (IT parks, SEZs, industrial estates, logistics
+parks, new towns), social infrastructure (schools, colleges, hospitals), utilities (water supply,
+sewage treatment, power substations), planning zones (DP reservations, TOD zones, CRZ,
+eco-sensitive zones) and negatives (landfills, high-tension lines, polluting industry, flood zones).
 
 Rules — follow exactly:
 - Use ONLY what the page text states. Never use outside knowledge. Never infer or estimate.
@@ -61,16 +66,23 @@ Rules — follow exactly:
 - "status" must be one of: planned, under_construction, partially_operational, operational — and
   only when the page says so or shows it plainly (e.g. construction progress percentages mean
   under_construction). Otherwise null.
-- "kind" is one of: metro, suburban_rail, highway, road, airport, other.
+- "kind" is one of: metro, suburban_rail, high_speed_rail, highway, road, bridge, flyover,
+  airport, bus_depot, jetty, school, college, hospital, it_park, sez, industrial_estate,
+  logistics_park, data_centre, growth_centre, new_town, water_supply, sewage_treatment,
+  power_substation, dp_reservation, tod_zone, crz_zone, eco_sensitive_zone, landfill,
+  high_tension_line, polluting_industry, flood_zone, other.
+- A station, stop, interchange or package of a line/road is PART of that project, never a
+  project of its own: return ONE project for the line (e.g. "Mumbai–Ahmedabad High Speed Rail")
+  and put its stations under "stations". Only return several projects when the page describes
+  several separate lines, roads, estates or plants.
 - List stations only if the page names them as stations; list other named places the project
   passes through as localities. Each needs evidence containing that name.
 - Ignore site navigation menus, footers, and lists of the agency's other projects.
-- Only TRANSPORT infrastructure counts. If the page's project is not transport (e.g. waste
-  processing, water supply, housing, landscaping, IT systems, studies, training institutes,
-  memorials), return {"projects": []}.
-- Only PHYSICAL projects with a place: a line, road, bridge, tunnel, station or airport. Skip
-  programme items that aren't a place — procurement, rolling stock, power conversion, technical
-  assistance, institutional strengthening, resettlement.
+- Skip things that don't change what it is like to own land nearby: housing schemes,
+  landscaping, beautification, IT systems, studies, training programmes, memorials.
+- Only PHYSICAL projects with a place: a line, road, bridge, station, airport, campus, plant,
+  estate or zone. Skip programme items that aren't a place — procurement, rolling stock, power
+  conversion, technical assistance, institutional strengthening, resettlement.
 - If the page describes no specific project, return {"projects": []}.
 
 Respond with ONLY this JSON, no other text:
@@ -164,11 +176,22 @@ func isDailyQuota(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "tokens per day")
 }
 
+// isInvalidJSON: Groq's JSON mode occasionally rejects its own output ("Failed to validate JSON",
+// seen on NHSRCL's project overview, 2026-09-27). A second sample usually succeeds.
+func isInvalidJSON(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "Failed to validate JSON")
+}
+
 func (e *GroqInfraExtractor) complete(ctx context.Context, user string) (string, error) {
+	jsonRetried := false
 	for attempt := 0; ; attempt++ {
 		content, err := e.completeOnce(ctx, user)
 		if isDailyQuota(err) {
 			return "", fmt.Errorf("%w: %v", ErrDailyQuota, err)
+		}
+		if isInvalidJSON(err) && !jsonRetried {
+			jsonRetried = true
+			continue
 		}
 		wait, limited := rateLimitWait(err)
 		if !limited || attempt >= maxRateLimitRetries {
@@ -292,11 +315,7 @@ func toPlaces(ws []wirePlace) []infrapipeline.NamedPlace {
 }
 
 func normalizeKind(k string) string {
-	switch k = strings.ToLower(strings.TrimSpace(k)); k {
-	case "metro", "suburban_rail", "highway", "road", "airport":
-		return k
-	}
-	return "other"
+	return domain.NormalizeKind(strings.ToLower(strings.TrimSpace(k)))
 }
 
 func normalizeStatus(s string) string {
@@ -309,27 +328,59 @@ func normalizeStatus(s string) string {
 
 var hrefRe = regexp.MustCompile(`(?i)<a\s[^>]*href\s*=\s*["']([^"']+)["']`)
 
-// projectPathHint marks same-site links that look like individual project pages (e.g. MMRDA's
-// /en/projects/transport/metro-line-12/overview). Tuned per agency as sources are added.
-var projectPathHint = regexp.MustCompile(`(?i)/projects?/`)
+// linkRule says which same-site links on an agency's index page are project pages. Tuned per
+// agency as sources are added; hosts without a rule use defaultLinkRule.
+type linkRule struct {
+	project *regexp.Regexp // path of an individual project page
+	index   *regexp.Regexp // path of a sub-listing to crawl one level further (optional)
+	keep    []string       // query parameters that identify the page; all others are dropped
+}
 
-// DiscoverProjectLinks returns same-host links on an index page that look like project pages,
-// de-duplicated, as project_page sources. Deterministic: parsed from HTML, never from the LLM.
+// defaultLinkRule matches MMRDA-style paths (/en/projects/transport/metro-line-12/overview).
+var defaultLinkRule = linkRule{project: regexp.MustCompile(`(?i)/projects?/`)}
+
+var linkRules = map[string]linkRule{
+	// MSRDC (checked 2026-09-27): ProjectListView.aspx -> ProjectSubListView.aspx?ID=18 (a
+	// category) -> ProjectListDetails.aspx?ID=44&MainId=18 (a project). The ID is the page.
+	"msrdc.in": {
+		project: regexp.MustCompile(`(?i)/Site/Common/ProjectListDetails\.aspx$`),
+		index:   regexp.MustCompile(`(?i)/Site/Common/ProjectSubListView\.aspx$`),
+		keep:    []string{"ID", "MainId"},
+	},
+}
+
+// DiscoverProjectLinks returns same-host links on an index page that look like project pages (as
+// project_page sources) or sub-listings (as project_index sources), de-duplicated.
+// Deterministic: parsed from HTML, never from the LLM.
 func DiscoverProjectLinks(pageURL string, raw []byte) []infrapipeline.DiscoveredSource {
 	base, err := url.Parse(pageURL)
 	if err != nil || len(raw) == 0 {
 		return nil
 	}
+	rule, ok := linkRules[strings.TrimPrefix(base.Hostname(), "www.")]
+	if !ok {
+		rule = defaultLinkRule
+	}
 	seen := map[string]bool{}
 	var out []infrapipeline.DiscoveredSource
 	for _, m := range hrefRe.FindAllSubmatch(raw, -1) {
-		ref, err := url.Parse(strings.TrimSpace(string(m[1])))
+		ref, err := url.Parse(strings.TrimSpace(html.UnescapeString(string(m[1]))))
 		if err != nil {
 			continue
 		}
 		abs := base.ResolveReference(ref)
-		abs.RawQuery, abs.Fragment = "", ""
-		if abs.Host != base.Host || !projectPathHint.MatchString(abs.Path) {
+		abs.Fragment = ""
+		abs.RawQuery = keepQuery(abs.Query(), rule.keep)
+		if abs.Hostname() != base.Hostname() {
+			continue
+		}
+		var kind infrapipeline.SourceKind
+		switch {
+		case rule.project.MatchString(abs.Path):
+			kind = infrapipeline.SourceProjectPage
+		case rule.index != nil && rule.index.MatchString(abs.Path):
+			kind = infrapipeline.SourceProjectIndex
+		default:
 			continue
 		}
 		u := abs.String()
@@ -337,7 +388,20 @@ func DiscoverProjectLinks(pageURL string, raw []byte) []infrapipeline.Discovered
 			continue
 		}
 		seen[u] = true
-		out = append(out, infrapipeline.DiscoveredSource{URL: u, Kind: infrapipeline.SourceProjectPage})
+		out = append(out, infrapipeline.DiscoveredSource{URL: u, Kind: kind})
 	}
 	return out
+}
+
+// keepQuery re-encodes only the named parameters, in a stable order.
+func keepQuery(q url.Values, keep []string) string {
+	out := url.Values{}
+	for _, k := range keep {
+		for qk, v := range q {
+			if strings.EqualFold(qk, k) && len(v) > 0 {
+				out.Set(k, v[0])
+			}
+		}
+	}
+	return out.Encode()
 }

@@ -14,7 +14,8 @@ import type { components } from '@scridddhub/api-client';
 
 type LandParcel = components['schemas']['LandParcel'];
 type FeasibilityAssessment = components['schemas']['FeasibilityAssessment'];
-type PlannedInfrastructureList = components['schemas']['PlannedInfrastructureList'];
+type PlannedInfrastructureList =
+  components['schemas']['PlannedInfrastructureList'];
 
 type Row = {
   parcel: LandParcel;
@@ -26,18 +27,31 @@ type Row = {
 // 'loading' = in flight; null = the lookup failed; empty items = nothing on the list is nearby.
 type InfraState = PlannedInfrastructureList | null | 'loading';
 
-// Why a project is listed when it isn't measured by distance — never shown as if it were measured.
-const AREA_MATCH_LABEL: Record<string, string> = {
-  taluka: 'serves this parcel’s taluka — no station locations on file yet',
-  location_text: 'serves the taluka named in the location — no station locations on file yet',
-  resolved_area: 'serves the taluka this location falls in — no station locations on file yet',
-};
+type InfraItem = NonNullable<PlannedInfrastructureList['items']>[number];
 
-// The parcel text the geocoder tried first; when what matched differs, only part of it was found.
-function usedFallback(parcelLocation: string, matchedQuery: string | undefined): boolean {
-  if (!matchedQuery) return false;
-  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').replace(/,\s*maharashtra$/, '').trim();
-  return norm(parcelLocation) !== norm(matchedQuery);
+// Where the project is relative to the parcel, in plain words. Approximate station positions read
+// as "About X km"; projects matched by area rather than a measured distance never show a number.
+function whereText(item: InfraItem): string {
+  const p = item.nearest_point;
+  if (item.match_basis === 'distance' && p && item.distance_km != null) {
+    const place = p.kind === 'station' ? `${p.label} station` : p.label;
+    const approx = p.coord_source === 'approximate';
+    return `${approx ? 'About ' : ''}${item.distance_km} km from ${place}`;
+  }
+  return 'Serves this area';
+}
+
+function statusText(item: InfraItem): string {
+  const status = INFRA_STATUS_LABEL[item.status ?? ''] ?? item.status ?? '';
+  if (item.status === 'operational') return status;
+  return item.expected_completion
+    ? `${status} · Expected ${item.expected_completion}`
+    : `${status} · Completion date not announced`;
+}
+
+// "MMRDA — official project page" -> "MMRDA"
+function sourceAgency(name: string | undefined): string {
+  return (name ?? '').split(' — ')[0].trim() || 'Official source';
 }
 
 const INFRA_STATUS_LABEL: Record<string, string> = {
@@ -48,6 +62,81 @@ const INFRA_STATUS_LABEL: Record<string, string> = {
   // The source page doesn't state a status; it isn't marked open, so it's upcoming in some form.
   unknown: 'Planned / in progress',
 };
+
+// Display order and labels for the infrastructure groups (backend domain/infrastructure_kinds.go).
+const INFRA_GROUPS: { category: string; label: string }[] = [
+  { category: 'connectivity', label: 'Connectivity' },
+  { category: 'jobs', label: 'Jobs & growth' },
+  { category: 'social', label: 'Schools & hospitals' },
+  { category: 'utilities', label: 'Utilities' },
+  { category: 'planning', label: 'Planning & zoning' },
+  { category: 'negative', label: 'Watch out' },
+];
+
+// Nearest few per group; the rest sit behind "See all".
+const INFRA_PER_GROUP = 3;
+
+type ExistingPlace = NonNullable<PlannedInfrastructureList['existing']>[number];
+
+// A group's rows: planned projects first (they're what moves value), then places already there.
+type InfraRow = { planned: InfraItem } | { existing: ExistingPlace };
+
+// Nearest of each kind first, then the rest by distance — so a dozen nearby hospitals don't
+// push the one school out of the first three.
+function orderExisting(places: ExistingPlace[]): ExistingPlace[] {
+  const seen = new Set<string>();
+  const firsts: ExistingPlace[] = [];
+  const rest: ExistingPlace[] = [];
+  for (const p of places) {
+    const kind = p.kind ?? '';
+    if (seen.has(kind)) rest.push(p);
+    else {
+      seen.add(kind);
+      firsts.push(p);
+    }
+  }
+  return [...firsts, ...rest];
+}
+
+function groupInfra(
+  items: InfraItem[],
+  existing: ExistingPlace[],
+): { category: string; label: string; rows: InfraRow[] }[] {
+  return INFRA_GROUPS.map(g => ({
+    ...g,
+    rows: [
+      ...items
+        .filter(it => (it.category ?? 'connectivity') === g.category)
+        .map(planned => ({ planned })),
+      ...orderExisting(existing.filter(p => p.category === g.category)).map(
+        p => ({ existing: p }),
+      ),
+    ],
+  })).filter(g => g.rows.length > 0);
+}
+
+const EXISTING_KIND_LABEL: Record<string, string> = {
+  school: 'School',
+  college: 'College',
+  hospital: 'Hospital',
+  industrial_estate: 'Industrial area',
+  power_substation: 'Power substation',
+  water_supply: 'Water works',
+  landfill: 'Landfill',
+  sewage_treatment: 'Sewage plant',
+  high_tension_line: 'Power line',
+};
+
+// "School · 0.6 km away". The kind is dropped when the name already says it (unnamed plants and
+// lines are labelled by kind on the server), and distances round to 0 read "Under 100 m".
+function existingWhereText(p: ExistingPlace): string {
+  const km = p.distance_km ?? 0;
+  const distance = km < 0.1 ? 'Under 100 m away' : `${km} km away`;
+  const kind = EXISTING_KIND_LABEL[p.kind ?? ''];
+  const nameSaysKind =
+    !kind || (p.name ?? '').toLowerCase().includes(kind.toLowerCase().split(' ')[0]);
+  return nameSaysKind ? distance : `${kind} · ${distance}`;
+}
 
 type Coverage = NonNullable<PlannedInfrastructureList['coverage']>;
 
@@ -63,18 +152,37 @@ function coverageText(c: Coverage, radiusKm: number | undefined): string {
       // must not be described as "nearby" (they appear here once reviewed, if within range).
       if ((c.projects_found ?? 0) > 0) {
         const n = c.projects_found ?? 0;
-        const when = c.last_searched_at ? ` on ${formatDate(c.last_searched_at)}` : '';
-        return `Searched official sources${when}: ${n} new project${n === 1 ? '' : 's'} found, awaiting review. Nothing approved${within} yet.`;
+        const when = c.last_searched_at
+          ? ` on ${formatDate(c.last_searched_at)}`
+          : '';
+        return `Searched official sources${when}: ${n} new project${
+          n === 1 ? '' : 's'
+        } found, awaiting review. Nothing approved${within} yet.`;
       }
       return c.last_searched_at
-        ? `Checked official sources on ${formatDate(c.last_searched_at)}: nothing planned${within}.`
+        ? `Checked official sources on ${formatDate(
+            c.last_searched_at,
+          )}: nothing planned${within}.`
         : `Checked official sources: nothing planned${within}.`;
     default:
       return `Couldn't search this area yet — it will be retried.`;
   }
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
 
 // "26 Sep 2026" — formatted by hand because Hermes' Intl date support varies by build.
 function formatDate(iso: string): string {
@@ -106,18 +214,28 @@ export function ParcelComparisonScreen({ parcelIds, onBack }: Props) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [infra, setInfra] = useState<Record<string, InfraState>>({});
+  // "<parcelId>:<category>" groups the user has expanded past the nearest few.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleGroup = (key: string) =>
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const results = await Promise.all(
         parcelIds.map(async id => {
-          const [{ data: parcel, error: parcelError }, assessmentResult] = await Promise.all([
-            api.GET('/land-parcels/{id}', { params: { path: { id } } }),
-            api.GET('/land-parcels/{parcelID}/feasibility-assessment', {
-              params: { path: { parcelID: id } },
-            }),
-          ]);
+          const [{ data: parcel, error: parcelError }, assessmentResult] =
+            await Promise.all([
+              api.GET('/land-parcels/{id}', { params: { path: { id } } }),
+              api.GET('/land-parcels/{parcelID}/feasibility-assessment', {
+                params: { path: { parcelID: id } },
+              }),
+            ]);
           if (parcelError || !parcel) return null;
           return { parcel, assessment: assessmentResult.data ?? null };
         }),
@@ -131,11 +249,16 @@ export function ParcelComparisonScreen({ parcelIds, onBack }: Props) {
     })();
 
     // Each parcel's infrastructure fills in on its own as soon as it arrives.
-    setInfra(Object.fromEntries(parcelIds.map(id => [id, 'loading' as InfraState])));
+    setInfra(
+      Object.fromEntries(parcelIds.map(id => [id, 'loading' as InfraState])),
+    );
     parcelIds.forEach(async id => {
-      const { data } = await api.GET('/land-parcels/{parcelID}/planned-infrastructure', {
-        params: { path: { parcelID: id } },
-      });
+      const { data } = await api.GET(
+        '/land-parcels/{parcelID}/planned-infrastructure',
+        {
+          params: { path: { parcelID: id } },
+        },
+      );
       if (!cancelled) {
         setInfra(prev => ({ ...prev, [id]: data ?? null }));
       }
@@ -170,7 +293,9 @@ export function ParcelComparisonScreen({ parcelIds, onBack }: Props) {
   const recommended = rows
     .filter(r => r.assessment?.verdict)
     .sort(
-      (a, b) => (b.assessment!.margin_pct ?? -Infinity) - (a.assessment!.margin_pct ?? -Infinity),
+      (a, b) =>
+        (b.assessment!.margin_pct ?? -Infinity) -
+        (a.assessment!.margin_pct ?? -Infinity),
     )[0];
 
   return (
@@ -209,86 +334,137 @@ export function ParcelComparisonScreen({ parcelIds, onBack }: Props) {
             const state = infra[r.parcel.id!] ?? 'loading';
             const loaded = state === 'loading' ? null : state;
             const items = loaded?.items ?? [];
+            const existing = loaded?.existing ?? [];
             return (
               <View
                 key={r.parcel.id}
-                style={[styles.infraParcelBlock, i > 0 && styles.infraParcelBlockDivider]}>
+                style={[
+                  styles.infraParcelBlock,
+                  i > 0 && styles.infraParcelBlockDivider,
+                ]}
+              >
                 <Text style={styles.noteCellName}>{r.parcel.name}</Text>
                 {state === 'loading' ? (
                   <View style={styles.infraLoading}>
-                    <ActivityIndicator size="small" color={colors.onSurfaceVariant} />
-                    <Text style={styles.noteText}>Finding nearby infrastructure…</Text>
+                    <ActivityIndicator
+                      size="small"
+                      color={colors.onSurfaceVariant}
+                    />
+                    <Text style={styles.noteText}>
+                      Finding nearby infrastructure…
+                    </Text>
                   </View>
                 ) : loaded === null ? (
-                  <Text style={styles.noteText}>Could not load infrastructure.</Text>
+                  <Text style={styles.noteText}>
+                    Could not load infrastructure.
+                  </Text>
                 ) : (
                   <>
-                    <Text style={styles.infraSource}>
-                      {loaded.location
-                        ? `Location understood as: ${loaded.location.display_name}`
-                        : 'Could not place this location on a map — only taluka matches below.'}
-                    </Text>
-                    {loaded.location &&
-                    usedFallback(r.parcel.location ?? '', loaded.location.matched_query) ? (
-                      <Text style={styles.infraSource}>
-                        Exact place not found — measured from “
-                        {loaded.location.matched_query?.replace(/,\s*Maharashtra$/i, '')}” instead.
-                      </Text>
-                    ) : null}
-                    {items.length === 0 && !loaded.coverage ? (
-                      <Text style={styles.noteText}>
-                        No approved projects on the list within {loaded.radius_km} km.
+                    {/* How the location was geocoded (resolved place, partial matches) is internal —
+                        it stays in the API response for debugging but is never shown to users. */}
+                    {items.length === 0 &&
+                    existing.length === 0 &&
+                    !loaded.coverage ? (
+                      <Text style={styles.infraEmpty}>
+                        No projects on file within {loaded.radius_km} km yet.
                       </Text>
                     ) : null}
                     {loaded.coverage ? (
-                      <Text style={styles.noteText}>
+                      <Text style={styles.infraEmpty}>
                         {coverageText(loaded.coverage, loaded.radius_km)}
                       </Text>
                     ) : null}
                   </>
                 )}
-                {items.map(item => (
-                  <View key={item.project_id} style={styles.infraItem}>
-                    <Text style={styles.infraName}>{item.name}</Text>
-                    {item.match_basis === 'distance' && item.nearest_point ? (
-                      <Text style={styles.infraDistance}>
-                        {item.distance_km} km to {item.nearest_point.label}{' '}
-                        {item.nearest_point.kind === 'station' ? 'station' : ''}
-                        {item.nearest_point.coord_source === 'approximate' ? ' (approx. location)' : ''}
+                {groupInfra(items, existing).map(group => {
+                  const key = `${r.parcel.id}:${group.category}`;
+                  const open = expanded.has(key);
+                  const shown = open
+                    ? group.rows
+                    : group.rows.slice(0, INFRA_PER_GROUP);
+                  const hidden = group.rows.length - INFRA_PER_GROUP;
+                  const negative = group.category === 'negative';
+                  return (
+                    <View key={group.category} style={styles.infraGroup}>
+                      <Text
+                        style={[
+                          styles.infraGroupLabel,
+                          negative && styles.infraGroupLabelWarn,
+                        ]}
+                      >
+                        {group.label}
                       </Text>
-                    ) : (
-                      <Text style={styles.noteText}>
-                        {AREA_MATCH_LABEL[item.match_basis ?? ''] ?? ''}
-                        {item.area_note ? ` · ${item.area_note}` : ''}
-                      </Text>
-                    )}
-                    <Text style={styles.infraStatus}>
-                      {INFRA_STATUS_LABEL[item.status ?? ''] ?? item.status}
-                      {item.status === 'operational'
-                        ? ''
-                        : item.expected_completion
-                          ? ` — est. ${item.expected_completion}`
-                          : ' — no official date'}
-                    </Text>
-                    <Pressable onPress={() => item.source_url && Linking.openURL(item.source_url)}>
-                      <Text style={styles.infraSource}>
-                        {/* Who/what verified it (verified_by) is internal provenance, not shown. */}
-                        source: {item.source_name} · updated {formatDate(item.verified_at!)}
-                      </Text>
-                    </Pressable>
-                  </View>
-                ))}
+                      {shown.map(row => {
+                        if ('existing' in row) {
+                          const p = row.existing;
+                          return (
+                            <View key={p.source_url} style={styles.infraItem}>
+                              <Text style={styles.infraName}>{p.name}</Text>
+                              <Text style={styles.infraDistance}>
+                                {existingWhereText(p)}
+                              </Text>
+                              <Pressable
+                                onPress={() =>
+                                  p.source_url && Linking.openURL(p.source_url)
+                                }
+                              >
+                                <Text style={styles.infraSource}>
+                                  Source: OpenStreetMap
+                                </Text>
+                              </Pressable>
+                            </View>
+                          );
+                        }
+                        const item = row.planned;
+                        return (
+                          <View key={item.project_id} style={styles.infraItem}>
+                            <Text style={styles.infraName}>{item.name}</Text>
+                            <Text style={styles.infraDistance}>
+                              {whereText(item)}
+                            </Text>
+                            <Text style={styles.infraStatus}>
+                              {statusText(item)}
+                            </Text>
+                            <Pressable
+                              onPress={() =>
+                                item.source_url &&
+                                Linking.openURL(item.source_url)
+                              }
+                            >
+                              {/* Who/what verified it (verified_by) is internal provenance, not shown. */}
+                              <Text style={styles.infraSource}>
+                                Source: {sourceAgency(item.source_name)} ·
+                                Updated {formatDate(item.verified_at!)}
+                              </Text>
+                            </Pressable>
+                          </View>
+                        );
+                      })}
+                      {hidden > 0 ? (
+                        <Pressable onPress={() => toggleGroup(key)} hitSlop={8}>
+                          <Text style={styles.infraSeeAll}>
+                            {open
+                              ? 'Show less'
+                              : `See all ${group.rows.length}`}
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  );
+                })}
               </View>
             );
           })}
           <Text style={styles.infraAttribution}>
-            Distances are straight-line, not by road. Map data © OpenStreetMap contributors.
+            Straight-line distances. Map data © OpenStreetMap contributors.
           </Text>
         </View>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionHeading}>Nearby Registered Transactions</Text>
+        <Text style={styles.sectionHeading}>
+          Nearby Registered Transactions
+        </Text>
         <View style={styles.card}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.noteRow}>
@@ -330,7 +506,9 @@ export function ParcelComparisonScreen({ parcelIds, onBack }: Props) {
                 {rows.map(r => (
                   <View key={r.parcel.id} style={styles.valueCell}>
                     <Text style={styles.valueText}>
-                      {r.parcel.cost_rupees != null ? formatCrore(r.parcel.cost_rupees) : 'No price yet'}
+                      {r.parcel.cost_rupees != null
+                        ? formatCrore(r.parcel.cost_rupees)
+                        : 'No price yet'}
                     </Text>
                   </View>
                 ))}
@@ -377,7 +555,9 @@ export function ParcelComparisonScreen({ parcelIds, onBack }: Props) {
                   <View key={r.parcel.id} style={styles.valueCell}>
                     <Text style={styles.valueText}>
                       {r.assessment
-                        ? `${formatCrore(r.assessment.future_valuation_rupees!)} (~${r.assessment.future_valuation_year})`
+                        ? `${formatCrore(
+                            r.assessment.future_valuation_rupees!,
+                          )} (~${r.assessment.future_valuation_year})`
                         : 'Not assessed'}
                     </Text>
                   </View>
@@ -390,7 +570,9 @@ export function ParcelComparisonScreen({ parcelIds, onBack }: Props) {
             {rows.map(r => (
               <Text key={r.parcel.id} style={styles.summaryStripText}>
                 {r.parcel.name}
-                {r.assessment?.verdict ? ` — ${r.assessment.verdict}` : ' — not assessed'}
+                {r.assessment?.verdict
+                  ? ` — ${r.assessment.verdict}`
+                  : ' — not assessed'}
                 {r.assessment?.margin_pct != null
                   ? ` (est. margin ${r.assessment.margin_pct}%)`
                   : ''}
@@ -494,14 +676,14 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   noteCellName: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
     color: colors.onSurface,
   },
   noteText: {
-    fontSize: 11.5,
+    fontSize: 12.5,
     color: colors.onSurfaceVariant,
-    lineHeight: 16,
+    lineHeight: 18,
   },
   infraParcelBlock: {
     gap: 6,
@@ -522,28 +704,56 @@ const styles = StyleSheet.create({
     gap: 2,
     marginTop: 2,
   },
+  infraGroup: {
+    gap: 6,
+    marginTop: 6,
+  },
+  infraGroupLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    color: colors.secondary,
+  },
+  infraGroupLabelWarn: {
+    color: colors.error,
+  },
+  infraSeeAll: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.onSurface,
+    textDecorationLine: 'underline',
+  },
+  // Readability (2026-09-27): nothing below 12px, and no #a3a3a3 ("outline") text — it measured
+  // ~2.5:1 contrast on white, under the 4.5:1 minimum. Secondary text uses onSurfaceVariant (~4.8:1).
   infraName: {
-    fontSize: 12.5,
+    fontSize: 14,
     fontWeight: '700',
     color: colors.onSurface,
   },
   infraStatus: {
-    fontSize: 12,
+    fontSize: 13,
     color: colors.onSurface,
   },
   infraSource: {
-    fontSize: 10.5,
-    color: colors.outline,
+    fontSize: 12,
+    color: colors.onSurfaceVariant,
+    textDecorationLine: 'underline',
   },
   infraDistance: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: colors.primary,
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
+  infraEmpty: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.onSurfaceVariant,
   },
   infraAttribution: {
-    fontSize: 9.5,
-    color: colors.outline,
-    marginTop: 10,
+    fontSize: 11.5,
+    color: colors.onSurfaceVariant,
+    marginTop: 12,
   },
   row: {
     flexDirection: 'row',

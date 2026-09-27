@@ -1,0 +1,1079 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.11 87bfad18",
+  "osm3s": {
+    "timestamp_osm_base": "2026-09-27T18:00:21Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+
+{
+  "type": "node",
+  "id": 1827513667,
+  "lat": 19.2367995,
+  "lon": 73.1271408,
+  "tags": {
+    "amenity": "hospital",
+    "emergency": "no",
+    "name": "Chinchansure"
+  }
+},
+{
+  "type": "node",
+  "id": 7042885999,
+  "lat": 19.2357759,
+  "lon": 73.1267624,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Devi Bhavan, Bail Bazar, Behind Zojwalla Petrol Pump, Beside Dr Acharya Hospital, Kalyan West",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Meera Hospital-Kalyan",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7043575871,
+  "lat": 19.2268522,
+  "lon": 73.1240582,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "101-102, Shyam Nivas Netivali, Kalyan Shil Road, Kalyan",
+    "addr:postcode": "421306",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Shubhamkar Hospital",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7044023358,
+  "lat": 19.2405277,
+  "lon": 73.1411576,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Karnik Road, Post Office",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Holy Cross Hospital, Thane",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7044552002,
+  "lat": 19.2249353,
+  "lon": 73.1354683,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Nanda Apt, Near Bank Of Baroda, Poona Link Road, Vijaykumar Chowk, Kalyan (E), Poona Link Road",
+    "addr:postcode": "421306",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Chaitanya Nursing Home",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7047327181,
+  "lat": 19.2500023,
+  "lon": 73.1423204,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Shivdham Apartment, Sawali Building, Bhoir Wadi, Birla College Road, Kalyan(W)",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Gurukripa Criticare Hospital, Kalyan",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7047391022,
+  "lat": 19.2391906,
+  "lon": 73.1293693,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "1st. Floor, Old Sarangdhar Hospital, Ujjwal Bldg., Behind Sheetla Devi Temple, Shivaji Chowk, Kalyan (W)",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Shelar Hospital",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7048167597,
+  "lat": 19.2410899,
+  "lon": 73.1404402,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Radha Krishna Sankul, Opp. Holly Cross Hospital, Kalyan(W)",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Dr Shahs Laser Eye Institute",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7048777737,
+  "lat": 19.2412937,
+  "lon": 73.1451072,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Regency Avenue, Syndicate, Murbad Road, Kalyan(W)",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Gastrocare Hospital",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7049071905,
+  "lat": 19.2382719,
+  "lon": 73.1257322,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "2A, 2B Joker Plaza,Bail Bazar,Kalyan",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Sai Sanket Hospital",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7049277971,
+  "lat": 19.2410576,
+  "lon": 73.1472080,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Opposite Icici Bank, Near Heritage Hotel, Murbad Road.Kalyan(W)",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Sanjeevani Hopital",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7049614840,
+  "lat": 19.2527118,
+  "lon": 73.1369828,
+  "tags": {
+    "addr:district": "Mumbai",
+    "addr:full": "1st Floor, Flower Valley Complex, Khadakpada Circle, Kalyan West",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Kilbil Children's Hospital",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7049690796,
+  "lat": 19.2525643,
+  "lon": 73.1272571,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "1st Floor , Vaishavi Acrade, Tanaji Nagar, Adharwadi Chowk, Kalyan (West)",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Lotus Maternity Home and Child Surgery Center",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7050257644,
+  "lat": 19.2416293,
+  "lon": 73.1472248,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Poornima Bus Stop,Near Icici Bank,Kalyan",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Shree Om Sai Hospital",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7051345900,
+  "lat": 19.2360703,
+  "lon": 73.1273427,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "No 6, Aakash Arcade, Dr. Deepak Shetty Memorial, Akash Arcade Near Bhanu Sagar Theatre, Kalyan (W)",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Shree Devi Hospital - Kalyan",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7052705192,
+  "lat": 19.2417723,
+  "lon": 73.1451595,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "C Wing , Regency Avenue Near Masjid , Syndicate, Murbad Road, Kalyan(W)",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Shripada Maternity and Paediatric Nursing Home",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7052957362,
+  "lat": 19.2393083,
+  "lon": 73.1404361,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "102, 1st Floor, Iqbal Towers, Next To Dr Mhaskar's Hospital Murbad Road Kalyan - West Kalyan",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Leela Eye Institute",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7054180163,
+  "lat": 19.2227012,
+  "lon": 73.1284560,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Shop A-16,17,18, New Rachana Park, Chakki Naka, Kalyan East",
+    "addr:postcode": "421306",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "D M C T Hospital",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7054352748,
+  "lat": 19.2510640,
+  "lon": 73.1251448,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Namrata Heights, Kalyan West",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Cauvery Uroderm Centre",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7054452022,
+  "lat": 19.2374533,
+  "lon": 73.1234671,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Adheshwar Park, Bail Bazaar, Kalyan Shill Road, Kalyan West",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "email": "kln.customercare@fortishealthcare.com",
+    "name": "Fortis Hospitals Ltd Kalyan",
+    "source": "OpenGovernmentData",
+    "website": "https://www.fortismumbai.com/hospital-kalyan/"
+  }
+},
+{
+  "type": "node",
+  "id": 7054475617,
+  "lat": 19.2417850,
+  "lon": 73.1352185,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Opposite Shree Swami Samarth Kendra, Near Dr Koranne's Hospital, Rambaug Lane No 2, Kalyan",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Sai Shraddha Nursing Home",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7055225978,
+  "lat": 19.2412975,
+  "lon": 73.1473468,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "201,203, Marc Plaza, Purnima Area, Murbad Road, Near Hero Honda Showroom, Kalyan (W)",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Dr. Wankhade's Fracture and Accident Hospital",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7055680004,
+  "lat": 19.2401757,
+  "lon": 73.1436226,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "1st Floor, A Wing, Bhagwati Ashish Apt. Syndicate, Murbad Road, Kalyan (W)",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Balaji Ent and Eye Hospital",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7062490979,
+  "lat": 19.2506949,
+  "lon": 73.1413501,
+  "tags": {
+    "addr:district": "Mumbai",
+    "addr:full": "1st Florr, Gurukrupa Apt, Chikanghar, Birla College Road , Beside Sandeep Hotel",
+    "addr:postcode": "400001",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Bhoir Hospital",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7063909919,
+  "lat": 19.2423079,
+  "lon": 73.1284654,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Kalyan Station Road, Near Shankar Rao Chowk, Kalyan West",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Social Service League Kalyan's Charitable Eye and General Hospital",
+    "phone": "0251 220 5148",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7064863434,
+  "lat": 19.2558239,
+  "lon": 73.1424947,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Khadakpada, Gagangiri Soc, Near Godrej Mill, Kalyan W",
+    "addr:postcode": "400603",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "The Kalyan Hospital and Iccu",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7066954921,
+  "lat": 19.2241613,
+  "lon": 73.1247076,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Anand Sudha Bhavan,Gopal Chowk,Chakki Maka",
+    "addr:postcode": "421306",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Kalyan Metro Multi Speciality Hospital Pvt. Ltd",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7068096867,
+  "lat": 19.2364758,
+  "lon": 73.1278820,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Usha Complex, 2nd Floor, Opposite Bhanu Sagar Cinema, Valipeer Road, Kalyan (W)",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Dr Thakurs Ent Hospital",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7069569112,
+  "lat": 19.2451024,
+  "lon": 73.1433584,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": ",2 Floor,Sampada Hospital Building,Mhasoba Maidan",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Sampada Hospital",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7070157959,
+  "lat": 19.2405030,
+  "lon": 73.1628782,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Next To Saibaba Mandir, Opposite Bus Stop, Ulhasnagar",
+    "addr:postcode": "421001",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Mamta Nursing Home",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7073438345,
+  "lat": 19.2422586,
+  "lon": 73.1487362,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Opposite Roshan Petrol Pump, Murbad Road, Kalyan",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Yashonandan Hospital Maternity, Padiatric and Genera",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7079379261,
+  "lat": 19.2290138,
+  "lon": 73.1380838,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Ashish Building, Kolsewadi, Kalyan E",
+    "addr:postcode": "421306",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Gurudeo Maternity and Orthopaedic Home",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7079411305,
+  "lat": 19.2487983,
+  "lon": 73.1428876,
+  "tags": {
+    "addr:district": "Mumbai",
+    "addr:full": "K.D.M.C.B-Wardoffice, Birla colleg road, Chikanghar, Kalyan(W)",
+    "addr:postcode": "400065",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Sai Sanjivani Criticare Hospital",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7080757142,
+  "lat": 19.2571927,
+  "lon": 73.1391814,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "E2, A Wing, Radhanagar Comm. Complex, Opposite Police , Station, Khadakpada, Kalyan (W)",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Tanmay Health Care",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7082626980,
+  "lat": 19.2521522,
+  "lon": 73.1357811,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "1st Floor, Vishal Raj Complex, Khadkpada Chowk, Opposite Vanashree Society, Kalyan",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Pratibha Hospital",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7085878713,
+  "lat": 19.2246488,
+  "lon": 73.1340095,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Tisgao Naka, Santosh Nagar",
+    "addr:postcode": "421306",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Shree Tisai Hospital",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7086566891,
+  "lat": 19.2397680,
+  "lon": 73.1379242,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Murbad Road Kalyan",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Mhaskars Hospital, Thane",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7086629018,
+  "lat": 19.2443408,
+  "lon": 73.1235275,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Shiv Tirtha Apartment Parnaka Kalyan",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Apex Hospital",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7086762795,
+  "lat": 19.2272030,
+  "lon": 73.1408948,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Yogeshwar Tower,Poona Link Road .,Katemanivali",
+    "addr:postcode": "421306",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Saikrupa Hospital",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7225067126,
+  "lat": 19.2314914,
+  "lon": 73.1368687,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Geeta Harkisan Dawakhana, Near Canara Bank, Kolsewadi East",
+    "addr:postcode": "421306",
+    "addr:state": "Maharashtra",
+    "addr:subdistrict": "Kalyan",
+    "amenity": "hospital",
+    "name": "KDMC Kolsewadi Municipal Hospital",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7226636041,
+  "lat": 19.2373120,
+  "lon": 73.1384780,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Near Railway Community Hall",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "addr:subdistrict": "Kalyan",
+    "amenity": "hospital",
+    "name": "KDMC Central Railway Hospital",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7226636115,
+  "lat": 19.2374650,
+  "lon": 73.1349810,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Bai Rukminibai Hosptial, Near Tahasil Office, Kalyan West",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "addr:subdistrict": "Kalyan",
+    "amenity": "hospital",
+    "description": "Sub District Hospital",
+    "name": "KDMC HOSP 1 Bai Rukhminibai Hospital (Kalyan)",
+    "source": "OpenGovernmentData"
+  }
+},
+{
+  "type": "node",
+  "id": 7663684026,
+  "lat": 19.2467670,
+  "lon": 73.1090670,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Vedant Chamber, Near Durgadi Bridge, Bhiwandi - Kalyan Road, Jambhulwadi, Kon",
+    "addr:postcode": "421302",
+    "addr:state": "Maharastra",
+    "amenity": "hospital",
+    "name": "Ved Hospital",
+    "source": "Local Knowledge"
+  }
+},
+{
+  "type": "node",
+  "id": 7663684032,
+  "lat": 19.2441572,
+  "lon": 73.1225611,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Gaurav Prasad Building, Paranaka, Opposite Gajanan Maharaj Mandir, Kalyan",
+    "addr:postcode": "421301",
+    "addr:state": "Maharastra",
+    "amenity": "hospital",
+    "name": "Phadke Hospital",
+    "source": "Local Knowledge"
+  }
+},
+{
+  "type": "node",
+  "id": 7663684034,
+  "lat": 19.2322856,
+  "lon": 73.1575730,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Sidhi Vinayak Nagar, Ulhasnagar",
+    "addr:postcode": "421003",
+    "addr:state": "Maharastra",
+    "amenity": "hospital",
+    "name": "Sheva Niketan Hospital",
+    "source": "Local Knowledge"
+  }
+},
+{
+  "type": "node",
+  "id": 7663684035,
+  "lat": 19.2403330,
+  "lon": 73.1263560,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Tapovan Building, Dr. Ambedkar Road, Opposite Pathare Nursery, Kalyan West, Thane",
+    "addr:postcode": "421301",
+    "addr:state": "Maharastra",
+    "amenity": "hospital",
+    "name": "Om Hospital",
+    "source": "Local Knowledge"
+  }
+},
+{
+  "type": "node",
+  "id": 7663684038,
+  "lat": 19.2405817,
+  "lon": 73.1446275,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Namdev Vihar, Nilkanth Society, Kalyan West, Chikan Ghar, Kalyan",
+    "addr:postcode": "421301",
+    "addr:state": "Maharastra",
+    "amenity": "hospital",
+    "name": "Prathmesh Hospital",
+    "source": "Local Knowledge"
+  }
+},
+{
+  "type": "node",
+  "id": 7663684041,
+  "lat": 19.2468570,
+  "lon": 73.1056300,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Vasudev Patil Nagar, Kongaon",
+    "addr:postcode": "421311",
+    "addr:state": "Maharastra",
+    "amenity": "hospital",
+    "name": "Goverment Hospital",
+    "source": "Local Knowledge"
+  }
+},
+{
+  "type": "node",
+  "id": 7663684043,
+  "lat": 19.2433785,
+  "lon": 73.1289590,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Near Katkar Hospital, Next To Preety Sandwitch, Agra Road, Kalyan(W), Manik Colony, Kumbharwada",
+    "addr:postcode": "421301",
+    "addr:state": "Maharastra",
+    "amenity": "hospital",
+    "name": "Katkar Hospital",
+    "source": "Local Knowledge"
+  }
+},
+{
+  "type": "node",
+  "id": 7663684051,
+  "lat": 19.2373840,
+  "lon": 73.1260080,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Om Supreme Chamber, Near Dmart, Station Road, Bhoiwada, Kalyan",
+    "addr:postcode": "421301",
+    "addr:state": "Maharastra",
+    "amenity": "hospital",
+    "name": "AM PM 24 Hrs Hospital",
+    "source": "Local Knowledge"
+  }
+},
+{
+  "type": "node",
+  "id": 7663684061,
+  "lat": 19.2409730,
+  "lon": 73.1444800,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "1st Floor, Shubham Apartment, Above Bata Showroom Syndicate, Murbad Road, Near Commissioner Bunglow, Kalyan",
+    "addr:postcode": "421301",
+    "addr:state": "Maharastra",
+    "amenity": "hospital",
+    "name": "City Criticare Hospital",
+    "source": "Local Knowledge"
+  }
+},
+{
+  "type": "node",
+  "id": 7663684062,
+  "lat": 19.2555812,
+  "lon": 73.1382460,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Radha Nagar Shopping Complex, Radha Nagar, Khadakpada, Kalyan",
+    "addr:postcode": "421301",
+    "addr:state": "Maharastra",
+    "amenity": "hospital",
+    "name": "Aayush Hospital",
+    "source": "Local Knowledge"
+  }
+},
+{
+  "type": "node",
+  "id": 7663684064,
+  "lat": 19.2439387,
+  "lon": 73.1294689,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Sahajanand Chowk, Agra Road, Near Kala Talao, Kalyan West",
+    "addr:postcode": "421301",
+    "addr:state": "Maharastra",
+    "amenity": "hospital",
+    "healthcare": "hospital",
+    "name": "National Hospital",
+    "source": "Local Knowledge"
+  }
+},
+{
+  "type": "node",
+  "id": 7663684071,
+  "lat": 19.2479495,
+  "lon": 73.1068571,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Giridhar Nagar, Kon, Kongaon",
+    "addr:postcode": "421302",
+    "addr:state": "Maharastra",
+    "amenity": "hospital",
+    "name": "Puja Nursing Home",
+    "source": "Local Knowledge"
+  }
+},
+{
+  "type": "node",
+  "id": 8816868782,
+  "lat": 19.2386334,
+  "lon": 73.1547350,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Shahad, Ulhasnagar",
+    "addr:postcode": "421001",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Life care Hospital",
+    "source": "Local Knowledge"
+  }
+},
+{
+  "type": "node",
+  "id": 8816956818,
+  "lat": 19.2322478,
+  "lon": 73.1575848,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Ulhasnagar",
+    "addr:postcode": "421003",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Satya Sai Platinum Hospital",
+    "source": "Local Knowledge"
+  }
+},
+{
+  "type": "node",
+  "id": 8817169582,
+  "lat": 19.2246488,
+  "lon": 73.1259951,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Kalyan",
+    "addr:postcode": "421306",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Star city Multispeciality Hospital",
+    "source": "Local Knowledge"
+  }
+},
+{
+  "type": "node",
+  "id": 8817554417,
+  "lat": 19.2569013,
+  "lon": 73.1367387,
+  "tags": {
+    "addr:district": "Thane",
+    "addr:full": "Wayle Nagar, Kalyan(W), Khadakpada",
+    "addr:postcode": "421301",
+    "addr:state": "Maharashtra",
+    "amenity": "hospital",
+    "name": "Shwaas Multispeciality Hospital",
+    "source": "Local Knowledge"
+  }
+},
+{
+  "type": "node",
+  "id": 8957834994,
+  "lat": 19.2439547,
+  "lon": 73.1288269,
+  "tags": {
+    "amenity": "college",
+    "name": "Regal College"
+  }
+},
+{
+  "type": "node",
+  "id": 8957837209,
+  "lat": 19.2446567,
+  "lon": 73.1285538,
+  "tags": {
+    "amenity": "hospital",
+    "healthcare": "hospital",
+    "name": "Jagannath hospital"
+  }
+},
+{
+  "type": "node",
+  "id": 10172728624,
+  "lat": 19.2404905,
+  "lon": 73.1263284,
+  "tags": {
+    "amenity": "hospital",
+    "healthcare": "hospital",
+    "name": "om hospital"
+  }
+},
+{
+  "type": "node",
+  "id": 11866580671,
+  "lat": 19.2598336,
+  "lon": 73.1381515,
+  "tags": {
+    "amenity": "college",
+    "name:en": "Narayana Junior College"
+  }
+},
+{
+  "type": "node",
+  "id": 11866604969,
+  "lat": 19.2598412,
+  "lon": 73.1265630,
+  "tags": {
+    "addr:postcode": "421301",
+    "amenity": "school",
+    "name:en": "Don Bosco School"
+  }
+},
+{
+  "type": "node",
+  "id": 13601936279,
+  "lat": 19.2531469,
+  "lon": 73.1316178,
+  "tags": {
+    "addr:city": "Kalyan",
+    "addr:district": "Thane",
+    "addr:housenumber": "101/2/3/9, Maatr Skye",
+    "addr:postcode": "421301",
+    "addr:street": "Kalyan-Murbad Road",
+    "amenity": "hospital",
+    "emergency": "yes",
+    "healthcare": "hospital",
+    "healthcare:speciality": "diagnostic_radiology;cardiology;general;internal",
+    "name": "alfi diagnostics & smart clinics"
+  }
+},
+{
+  "type": "way",
+  "id": 354003530,
+  "center": {
+    "lat": 19.2531375,
+    "lon": 73.1425733
+  },
+  "tags": {
+    "amenity": "school",
+    "building": "yes",
+    "building:floor": "4",
+    "grades": "1-10",
+    "name": "Sri Vani Vidyalaya High School"
+  }
+},
+{
+  "type": "way",
+  "id": 683838280,
+  "center": {
+    "lat": 19.2481728,
+    "lon": 73.1470362
+  },
+  "tags": {
+    "addr:city": "Kalyan",
+    "amenity": "college",
+    "name": "Birla College"
+  }
+},
+{
+  "type": "way",
+  "id": 683838281,
+  "center": {
+    "lat": 19.2498311,
+    "lon": 73.1465082
+  },
+  "tags": {
+    "addr:city": "Kalyan",
+    "amenity": "school",
+    "name": "Birla School"
+  }
+},
+{
+  "type": "way",
+  "id": 758756974,
+  "center": {
+    "lat": 19.2443495,
+    "lon": 73.1235411
+  },
+  "tags": {
+    "addr:city": "KALYAN",
+    "addr:district": "Thane",
+    "addr:postcode": "421301",
+    "addr:street": "Parnaka Road",
+    "amenity": "hospital",
+    "emergency": "yes",
+    "healthcare": "hospital",
+    "healthcare:speciality": "general;orthopaedics;intensive;clinical_pathology",
+    "name": "APEX HOSPITAL",
+    "opening_hours": "24/7"
+  }
+},
+{
+  "type": "way",
+  "id": 1031703421,
+  "center": {
+    "lat": 19.2512870,
+    "lon": 73.1417880
+  },
+  "tags": {
+    "amenity": "hospital",
+    "healthcare": "hospital"
+  }
+},
+{
+  "type": "way",
+  "id": 1153427363,
+  "center": {
+    "lat": 19.2479625,
+    "lon": 73.1060367
+  },
+  "tags": {
+    "amenity": "hospital",
+    "healthcare": "hospital"
+  }
+},
+{
+  "type": "way",
+  "id": 1153428256,
+  "center": {
+    "lat": 19.2403271,
+    "lon": 73.1411179
+  },
+  "tags": {
+    "amenity": "hospital",
+    "healthcare": "hospital"
+  }
+},
+{
+  "type": "way",
+  "id": 1412971621,
+  "center": {
+    "lat": 19.2599575,
+    "lon": 73.1267469
+  },
+  "tags": {
+    "amenity": "school",
+    "name": "Don Bosco School"
+  }
+},
+{
+  "type": "way",
+  "id": 1550112352,
+  "center": {
+    "lat": 19.2561697,
+    "lon": 73.1337448
+  },
+  "tags": {
+    "amenity": "school",
+    "education": "school",
+    "name": "Rita Memorial High school"
+  }
+}
+
+  ]
+}

@@ -2044,6 +2044,34 @@ components:
               nullable: true
             projects_found:
               type: integer
+        existing:
+          type: array
+          description: >-
+            Places already there near the resolved location (schools, colleges, hospitals,
+            named industrial areas, transmission substations, water works, landfills, sewage plants, high-tension lines),
+            from OpenStreetMap, nearest first. Empty when the location couldn't be resolved or the
+            first lookup for this area is still running.
+          items:
+            $ref: "#/components/schemas/ExistingPlace"
+
+    ExistingPlace:
+      type: object
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [school, college, hospital, industrial_estate, power_substation, water_supply,
+                 landfill, sewage_treatment, high_tension_line]
+        category:
+          type: string
+          enum: [connectivity, jobs, social, utilities, planning, negative]
+        distance_km:
+          type: number
+          description: straight-line km from the resolved location
+        source_url:
+          type: string
+          description: the place on openstreetmap.org
 
     PlannedInfrastructureItem:
       type: object
@@ -2055,10 +2083,19 @@ components:
           type: string
         kind:
           type: string
-          enum: [metro, suburban_rail, highway, road, airport, other]
+          enum: [metro, suburban_rail, high_speed_rail, highway, road, bridge, flyover, airport,
+                 bus_depot, jetty, school, college, hospital, it_park, sez, industrial_estate,
+                 logistics_park, data_centre, growth_centre, new_town, water_supply,
+                 sewage_treatment, power_substation, dp_reservation, tod_zone, crz_zone,
+                 eco_sensitive_zone, landfill, high_tension_line, polluting_industry, flood_zone,
+                 other]
+        category:
+          type: string
+          enum: [connectivity, jobs, social, utilities, planning, negative]
+          description: display group; negative means something that can lower value nearby
         status:
           type: string
-          enum: [planned, under_construction, partially_operational, operational]
+          enum: [planned, under_construction, partially_operational, operational, unknown]
         expected_completion:
           type: string
           description: free text, may be a range; empty when unknown

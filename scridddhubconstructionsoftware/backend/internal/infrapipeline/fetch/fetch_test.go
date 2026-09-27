@@ -263,6 +263,21 @@ func TestHTMLToText_RealMMRDAPageKeepsContentDropsMenu(t *testing.T) {
 	}
 }
 
+// testdata/msrdc_project_44.html is MSRDC's real project page, saved 2026-09-27. Like most ASP.NET
+// WebForms sites it wraps the whole body in one <form>; skipping <form> left 0 characters.
+func TestHTMLToText_RealASPNetPageInsideForm(t *testing.T) {
+	raw, err := os.ReadFile("testdata/msrdc_project_44.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := HTMLToText(raw)
+	for _, want := range []string{"Burfiwala Junction, Andheri", "Revised Contract Value", "567.7 Meter"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in %d chars of text", want, len(text))
+		}
+	}
+}
+
 func TestParseRobots_Wildcards(t *testing.T) {
 	r := parseRobots("User-agent: *\nDisallow: /*.pdf$\nDisallow: /search\nAllow: /search/about\n", robotsAgentToken)
 	cases := map[string]bool{

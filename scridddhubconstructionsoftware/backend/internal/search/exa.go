@@ -52,8 +52,13 @@ type exaResponse struct {
 	Error string `json:"error"`
 }
 
-func exaQuery(place string) string {
-	return "planned or under-construction metro, suburban rail, highway, expressway, bridge, tunnel or airport project near " + place
+// exaQueries: one search per theme. A single query naming every kind of project returned mostly
+// transport pages, so jobs hubs, utilities and hazards get their own.
+func exaQueries(place string) []string {
+	return []string{
+		"planned or under-construction metro, suburban rail, highway, expressway, bridge, tunnel or airport project near " + place,
+		"new industrial estate, MIDC area, IT park, SEZ, logistics park, growth centre, water supply scheme, sewage treatment plant, power substation or landfill project near " + place,
+	}
 }
 
 // exaDomains sends each allowlisted domain both exactly and as a wildcard, so "gov.in" also covers
@@ -66,8 +71,27 @@ func exaDomains(domains []string) []string {
 	return out
 }
 
+// Discover runs each theme's search and returns the URLs found, first-seen order, without repeats.
 func (e *ExaDiscoverer) Discover(ctx context.Context, place string, domains []string) ([]string, error) {
-	body, err := json.Marshal(exaRequest{Query: exaQuery(place), Type: "auto", NumResults: e.numResults, IncludeDomains: exaDomains(domains)})
+	var urls []string
+	seen := map[string]bool{}
+	for _, q := range exaQueries(place) {
+		found, err := e.search(ctx, q, domains)
+		if err != nil {
+			return nil, err
+		}
+		for _, u := range found {
+			if !seen[u] {
+				seen[u] = true
+				urls = append(urls, u)
+			}
+		}
+	}
+	return urls, nil
+}
+
+func (e *ExaDiscoverer) search(ctx context.Context, query string, domains []string) ([]string, error) {
+	body, err := json.Marshal(exaRequest{Query: query, Type: "auto", NumResults: e.numResults, IncludeDomains: exaDomains(domains)})
 	if err != nil {
 		return nil, err
 	}

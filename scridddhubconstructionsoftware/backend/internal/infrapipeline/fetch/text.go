@@ -8,11 +8,13 @@ import (
 	"golang.org/x/net/html"
 )
 
-// skipTags never contain page content worth extracting.
+// skipTags never contain page content worth extracting. <form> itself is NOT listed: ASP.NET
+// WebForms sites (MSRDC, NHSRCL, many government portals) wrap the entire page in one <form>, and
+// skipping it left 0 characters of MSRDC's project pages (2026-09-27). Only the controls go.
 var skipTags = map[string]bool{
 	"script": true, "style": true, "noscript": true, "template": true, "svg": true,
 	"nav": true, "header": true, "footer": true, "aside": true,
-	"form": true, "button": true, "select": true, "option": true, "iframe": true,
+	"button": true, "select": true, "option": true, "textarea": true, "input": true, "iframe": true,
 }
 
 // blockTags end a line of text, so sentences from different blocks never run together.

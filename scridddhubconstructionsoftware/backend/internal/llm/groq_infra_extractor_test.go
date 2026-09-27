@@ -115,6 +115,29 @@ func TestDiscoverProjectLinks(t *testing.T) {
 	}
 }
 
+// Link shapes from MSRDC's real pages (2026-09-27): the project ID lives in the query string, the
+// site redirects to an explicit :443 host, and hrefs carry &amp; entities.
+func TestDiscoverProjectLinks_MSRDCKeepsIDs(t *testing.T) {
+	page := []byte(`<a href='/Site/Common/ProjectSubListView.aspx?ID=18'>Roads</a>
+		<a href="https://msrdc.in:443/Site/Common/ProjectListDetails.aspx?ID=44&amp;MainId=18&amp;lang=en">A</a>
+		<a href="https://msrdc.in:443/Site/Common/ProjectListDetails.aspx?ID=47&amp;MainId=18">B</a>
+		<a href="/Site/Common/ContactUs.aspx">Contact</a>`)
+	got := DiscoverProjectLinks("https://msrdc.in:443/site/common/ProjectListView.aspx", page)
+	want := []infrapipeline.DiscoveredSource{
+		{URL: "https://msrdc.in:443/Site/Common/ProjectSubListView.aspx?ID=18", Kind: infrapipeline.SourceProjectIndex},
+		{URL: "https://msrdc.in:443/Site/Common/ProjectListDetails.aspx?ID=44&MainId=18", Kind: infrapipeline.SourceProjectPage},
+		{URL: "https://msrdc.in:443/Site/Common/ProjectListDetails.aspx?ID=47&MainId=18", Kind: infrapipeline.SourceProjectPage},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %+v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("link %d: got %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
 // Live test against Groq with the real MMRDA Metro Line 12 page text (fetched 2026-09-26).
 // Skipped without GROQ_API_KEY. It checks the part that matters: after verification, nothing the
 // page doesn't state survives — in particular no completion date (the page gives none).

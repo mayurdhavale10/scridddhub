@@ -17,6 +17,7 @@ type InfrastructureProject struct {
 	ID                 uuid.UUID
 	Name               string
 	Kind               string
+	Category           string // connectivity | social | jobs | utilities | planning | negative
 	Status             string
 	ExpectedCompletion string // free text, may be a range; "" when unknown
 	Description        string

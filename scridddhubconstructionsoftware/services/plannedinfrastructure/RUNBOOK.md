@@ -52,6 +52,8 @@ flowchart LR
 | `NOMINATIM_URL` | *optional* — self-hosted geocoder for bulk runs | see `docs/self-hosted-nominatim.md` |
 | `INFRA_PUBLISH_POLICY` | *optional* — `strict` / `evidence` (default) / `auto` | — |
 | `INFRA_ONDEMAND` | *optional* — `off` = only queue areas, don't search from the server | — |
+| `OSM_NEARBY` | *optional* — `off` = don't show existing schools/hospitals/hazards from OpenStreetMap | — |
+| `OVERPASS_URLS` | *optional* — comma-separated Overpass endpoints (default: overpass-api.de only) | a self-hosted Overpass before launch |
 
 Without `EXA_API_KEY`, discovery falls back to Groq's browser search, which failed repeatedly
 when tested (2026-09-27) — set the Exa key.
@@ -59,13 +61,24 @@ when tested (2026-09-27) — set the Exa key.
 ### 2.3 Database: migrations and seeds
 ```bash
 docker compose up -d postgres
-docker compose run --rm migrate up          # applies migrations up to 000032
+docker compose run --rm migrate up          # applies migrations up to 000035
 docker exec -i scridddhubconstructionsoftware-postgres-1 psql -U scridddhub -d scridddhub < backend/seeds/infrastructure_projects.sql
 docker exec -i scridddhubconstructionsoftware-postgres-1 psql -U scridddhub -d scridddhub < backend/seeds/infrastructure_sources.sql
+docker exec -i scridddhubconstructionsoftware-postgres-1 psql -U scridddhub -d scridddhub < backend/seeds/infrastructure_sources_more_agencies.sql
 ```
+Without the Docker CLI on PATH, migrations also run with golang-migrate directly (from `backend/`):
+`go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1 -path migrations -database "$DATABASE_URL" up`
+
 Migrations for this feature: 000028 (projects), 000029 (points, review gate, geocode cache),
 000030 (pipeline tables), 000031 (unknown status, project hints), 000032 (coverage queue,
-official-domain allowlist).
+official-domain allowlist), 000033 (six categories, 33 kinds), 000034 (OpenStreetMap place
+cache), 000035 (jobs group, MIDC/MSETCL domains).
+
+**Two kinds of data on the screen.** *Planned* projects (this pipeline, reviewed, official
+sources) and *existing* places (schools, hospitals, industrial areas, substations, landfills,
+sewage plants, power lines) looked up live from OpenStreetMap, cached per ~1 km cell for 30 days.
+The first lookup of a new area waits up to 12 s for OpenStreetMap; if the public server is busy
+(it often returns 504), the rest fills in on a later lookup — nothing to do.
 
 ### 2.4 First fill of the database (Step B)
 ```bash
@@ -134,9 +147,14 @@ curl -G http://localhost:8080/reference/planned-infrastructure --data-urlencode 
 
 1. Find the agency's **official** project pages (its own domain or `*.gov.in`).
 2. Check its `robots.txt` allows them. If a path is disallowed, don't register it.
-3. Add rows to `backend/seeds/infrastructure_sources.sql` — one per project page, with
-   `project_hint` (the project's name) so name variations don't create duplicates. Add any
-   official KML/GeoJSON as `kind = 'geodata'` with the same `project_hint`.
+3. Add rows to `backend/seeds/infrastructure_sources_more_agencies.sql` — one per project page,
+   with `project_hint` (the project's name) so name variations don't create duplicates. Add any
+   official KML/GeoJSON as `kind = 'geodata'` with the same `project_hint`. If the agency has a
+   projects *listing*, register that as `kind = 'project_index'` instead and add a link rule for
+   its URL pattern in `llm.linkRules` (`backend/internal/llm/groq_infra_extractor.go`) — MSRDC's is
+   the example (keeps its `?ID=` parameter, crawls sub-lists one level).
+   Check a page's readable text first: if it's only menus (content in a PDF, or rendered by
+   JavaScript), the pipeline can't use it — note it in the seed file as not registered.
 4. If its domain isn't in `infrastructure_official_domains` (migration 000032), add it there too
    so Step C discovery accepts pages from it.
 5. Apply the seed, dry-run that agency, run it, review.
@@ -153,6 +171,8 @@ curl -G http://localhost:8080/reference/planned-infrastructure --data-urlencode 
 | Public geocoder: 1 req/s, no bulk | pipeline caps itself at 300 lookups/run | self-host Nominatim before launch (`docs/self-hosted-nominatim.md`) |
 | Scheduled task needs the laptop on | a missed 1 PM run starts when the laptop is next on | — |
 | PDFs aren't read yet | PDF results from search are skipped | planned v2 |
+| Public Overpass (OpenStreetMap): shared, often busy | an area's schools/hospitals may take a few lookups to appear | self-host Overpass before launch (`OVERPASS_URLS`) |
+| OpenStreetMap completeness varies | e.g. Kalyan has many hospitals mapped but few schools | shown as "Source: OpenStreetMap"; not reviewed data |
 
 ---
 

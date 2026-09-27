@@ -1,0 +1,69 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.11 87bfad18",
+  "osm3s": {
+    "timestamp_osm_base": "2026-09-27T17:54:11Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+
+{
+  "type": "way",
+  "id": 204365978,
+  "center": {
+    "lat": 19.2555907,
+    "lon": 73.1440584
+  },
+  "tags": {
+    "man_made": "wastewater_plant"
+  }
+},
+{
+  "type": "way",
+  "id": 257480493,
+  "center": {
+    "lat": 19.2503196,
+    "lon": 73.1192170
+  },
+  "tags": {
+    "landuse": "landfill",
+    "name": "Aadharwadi Dumping Ground",
+    "operator": "KDMC"
+  }
+},
+{
+  "type": "way",
+  "id": 257480499,
+  "center": {
+    "lat": 19.2495837,
+    "lon": 73.1211968
+  },
+  "tags": {
+    "man_made": "wastewater_plant"
+  }
+},
+{
+  "type": "way",
+  "id": 1123967265,
+  "center": {
+    "lat": 19.2642279,
+    "lon": 73.1487550
+  },
+  "tags": {
+    "man_made": "wastewater_plant"
+  }
+},
+{
+  "type": "way",
+  "id": 1390642234,
+  "center": {
+    "lat": 19.2527004,
+    "lon": 73.1183750
+  },
+  "tags": {
+    "man_made": "wastewater_plant"
+  }
+}
+
+  ]
+}
