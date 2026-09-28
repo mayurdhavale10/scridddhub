@@ -12,6 +12,7 @@ import {
 import { api } from '../api/client';
 import { colors } from '../theme/colors';
 import { DEV_PROJECT_ID } from '../config/devProject';
+import { HomeIcon } from '../components/HomeIcon';
 import type { components } from '@scridddhub/api-client';
 
 type LandParcel = components['schemas']['LandParcel'];
@@ -245,15 +246,17 @@ export function LandParcelsScreen({
               <View style={styles.cardHeader}>
                 <View style={styles.cardTitleRow}>
                   {selectMode ? (
-                    <View
-                      style={[
-                        styles.checkbox,
-                        isSelected && styles.checkboxChecked,
-                      ]}>
-                      {isSelected ? (
-                        <Text style={styles.checkboxMark}>✓</Text>
-                      ) : null}
-                    </View>
+                    // House instead of a tick (owner, 2026-09-29): solid black when selected,
+                    // light grey when not.
+                    <HomeIcon
+                      size={20}
+                      color={isSelected ? colors.primary : colors.outlineVariant}
+                      backgroundColor={
+                        isSelected
+                          ? colors.surfaceContainer
+                          : colors.surfaceContainerLowest
+                      }
+                    />
                   ) : null}
                   <Text style={styles.cardTitle}>{item.name}</Text>
                 </View>
@@ -429,24 +432,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: colors.onSurface,
-  },
-  checkbox: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 1.5,
-    borderColor: colors.outline,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkboxChecked: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  checkboxMark: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: colors.onPrimary,
   },
   cardSubtitle: {
     fontSize: 11,

@@ -14,7 +14,7 @@ type NearbyPlace struct {
 	OSMType  string // node | way | relation
 	OSMID    int64
 	Name     string
-	Kind     string // an InfraKindCategory kind: school, college, hospital, industrial_estate, power_substation, water_supply, landfill, sewage_treatment, high_tension_line
+	Kind     string // an InfraKindCategory kind (osm.classify lists the ones OpenStreetMap supplies)
 	Category string // usually CategoryForKind(Kind); an existing sewage plant is "negative"
 	// Points: one for a place (its centre), every vertex for a line — distance is to the nearest.
 	Points []GeoPoint
@@ -30,21 +30,24 @@ type NearbyPlaceMatch struct {
 // hospital matters within a short drive; a landfill's smell and reputation carry further; a
 // high-tension line only matters if it's close to (or over) the land; an industrial estate is a
 // commute-distance employer.
+// Airports matter at city scale; a cemetery or mangrove only right next door (mangroves carry a
+// no-construction buffer).
 func NearbyPlaceRadiusKm(kind string) float64 {
 	switch kind {
-	case "landfill", "industrial_estate":
+	case "airport":
+		return 40
+	case "landfill", "industrial_estate", "expressway_exit":
 		return 5
-	case "high_tension_line":
+	case "high_tension_line", "cemetery", "mangrove":
 		return 1
-	case "power_substation", "water_supply":
+	case "forest", "protected_area":
+		return 1.5
+	case "power_substation", "water_supply", "park":
 		return 2
-	default: // school, college, hospital, sewage_treatment
+	default: // school, college, hospital, sewage_treatment, rail/metro station, mall, quarry
 		return 3
 	}
 }
-
-// MaxNearbyPlaceRadiusKm bounds every NearbyPlaceRadiusKm — used to size cached lookups.
-const MaxNearbyPlaceRadiusKm = 5.0
 
 // MatchNearbyPlaces keeps each place within its kind's radius of at, nearest first. Same kind and
 // name appear once (the nearest): OpenStreetMap maps one power line as many segments, and often

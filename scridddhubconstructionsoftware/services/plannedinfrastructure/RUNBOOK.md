@@ -102,7 +102,11 @@ Remove: `Unregister-ScheduledTask -TaskName "ScridddHub infra pipeline" -Confirm
 
 ## 3. Every day: starting the app
 
-1. Start Docker Desktop; wait until `docker ps` works.
+1. Start Docker Desktop; wait until `docker ps` works. It's installed per-user, so if `docker`
+   isn't found, launch `%LOCALAPPDATA%\Programs\DockerDesktop\Docker Desktop.exe` (the CLI is in
+   `...\resources\bin`). Let Docker finish starting **before** the emulator: starting both at
+   once crashed the emulator ("WHPX: Unexpected VP exit code 4"). If that happens, force-stop it
+   and cold-boot with `-no-snapshot-load`.
 2. `docker compose up -d postgres`
 3. Backend: `cd backend && go run ./cmd/server` — wait for `listening on :8080`.
    The Step C background worker starts with it.

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -27,9 +28,13 @@ const (
 	GroupUtilities = "utilities" // transmission substations, water works
 	GroupNegative  = "negative"  // landfills, sewage plants, high-tension lines
 	GroupJobs      = "jobs"      // named industrial areas (MIDC estates, large plants)
+	// Added 2026-09-28:
+	GroupConnectivity = "connectivity" // existing rail/metro stations, expressway exits, airports
+	GroupAmenities    = "amenities"    // named parks and grounds, malls
+	GroupProtected    = "protected"    // mangroves, forest land, protected areas
 )
 
-var Groups = []string{GroupSocial, GroupJobs, GroupUtilities, GroupNegative}
+var Groups = []string{GroupConnectivity, GroupSocial, GroupAmenities, GroupJobs, GroupUtilities, GroupNegative, GroupProtected}
 
 // DefaultEndpoints: the main public Overpass server first. Override with OVERPASS_URLS.
 var DefaultEndpoints = []string{"https://overpass-api.de/api/interpreter"}
@@ -82,9 +87,29 @@ func query(group string, centre domain.GeoPoint, padKm float64) string {
 		fmt.Fprintf(&b, `(way["landuse"="industrial"]["name"]%[1]s;relation["landuse"="industrial"]["name"]%[1]s;);out center tags;`,
 			around("industrial_estate"))
 	case GroupNegative:
-		fmt.Fprintf(&b, `(way["landuse"="landfill"]%s;way["man_made"="wastewater_plant"]%s;node["man_made"="wastewater_plant"]%[2]s;)->.a;`+
-			`way["power"="line"]%s->.b;.a out center tags;.b out geom tags;`,
-			around("landfill"), around("sewage_treatment"), around("high_tension_line"))
+		fmt.Fprintf(&b, `(way["landuse"="landfill"]%s;way["man_made"="wastewater_plant"]%s;node["man_made"="wastewater_plant"]%[2]s;`+
+			`way["landuse"="cemetery"]%[3]s;way["amenity"~"^(grave_yard|crematorium)$"]%[3]s;node["amenity"="crematorium"]%[3]s;`+
+			`way["landuse"="quarry"]%[4]s;)->.a;`+
+			`way["power"="line"]%[5]s->.b;.a out center tags;.b out geom tags;`,
+			around("landfill"), around("sewage_treatment"), around("cemetery"), around("quarry"), around("high_tension_line"))
+	case GroupConnectivity:
+		// Stations are mapped as points in some places (Kalyan) and as station buildings in others
+		// (Airoli, Rabale — checked 2026-09-28), so both; the same name appears once after matching.
+		fmt.Fprintf(&b, `(node["railway"="station"]%[1]s;way["railway"="station"]%[1]s;node["highway"="motorway_junction"]%s;way["aeroway"="aerodrome"]["iata"]%s;);out center tags;`,
+			around("rail_station"), around("expressway_exit"), around("airport"))
+	case GroupAmenities:
+		fmt.Fprintf(&b, `(way["leisure"="park"]["name"]%s;node["shop"="mall"]%[2]s;way["shop"="mall"]%[2]s;);out center tags;`,
+			around("park"), around("mall"))
+	case GroupProtected:
+		// Large polygons: distance to the centre of a forest says nothing about its edge, so the
+		// outline is fetched — clipped to the search box, which keeps the answer small.
+		km := domain.NearbyPlaceRadiusKm("forest") + padKm
+		dLat := km / 111.0
+		dLng := km / (111.0 * math.Cos(centre.Latitude*math.Pi/180))
+		fmt.Fprintf(&b, `(way["wetland"="mangrove"]%s;way["landuse"="forest"]%s;relation["boundary"="protected_area"]%[2]s;way["leisure"="nature_reserve"]%[2]s;);`+
+			`out tags geom(%.5f,%.5f,%.5f,%.5f);`,
+			around("mangrove"), around("forest"),
+			centre.Latitude-dLat, centre.Longitude-dLng, centre.Latitude+dLat, centre.Longitude+dLng)
 	}
 	return b.String()
 }
@@ -97,6 +122,10 @@ type element struct {
 	Center *latLon           `json:"center"`
 	Geom   []latLon          `json:"geometry"`
 	Tags   map[string]string `json:"tags"`
+	// Relations fetched with "out geom" carry their outline in their members.
+	Members []struct {
+		Geom []latLon `json:"geometry"`
+	} `json:"members"`
 }
 
 type latLon struct {
@@ -199,9 +228,13 @@ func toPlaces(els []element) []domain.NearbyPlace {
 		if kind == "sewage_treatment" {
 			p.Category = domain.InfraNegative // an existing plant next door is a nuisance, not an amenity
 		}
+		geom := e.Geom
+		for _, m := range e.Members {
+			geom = append(geom, m.Geom...)
+		}
 		switch {
-		case len(e.Geom) > 0:
-			for _, g := range e.Geom {
+		case len(geom) > 0:
+			for _, g := range geom {
 				p.Points = append(p.Points, domain.GeoPoint{Latitude: g.Lat, Longitude: g.Lon})
 			}
 		case e.Center != nil:
@@ -219,6 +252,32 @@ func toPlaces(els []element) []domain.NearbyPlace {
 // classify returns the kind and, for places whose presence matters more than their name, a label.
 func classify(t map[string]string) (kind, label string) {
 	switch {
+	case t["railway"] == "station":
+		switch t["station"] {
+		case "subway", "light_rail", "monorail":
+			return "metro_station", ""
+		}
+		return "rail_station", ""
+	case t["highway"] == "motorway_junction":
+		return "expressway_exit", "Expressway exit"
+	case t["aeroway"] == "aerodrome":
+		return "airport", ""
+	case t["leisure"] == "park":
+		return "park", ""
+	case t["shop"] == "mall":
+		return "mall", ""
+	case t["amenity"] == "crematorium":
+		return "cemetery", "Crematorium"
+	case t["landuse"] == "cemetery" || t["amenity"] == "grave_yard":
+		return "cemetery", "Cemetery"
+	case t["landuse"] == "quarry":
+		return "quarry", "Quarry"
+	case t["wetland"] == "mangrove":
+		return "mangrove", "Mangroves (protected)"
+	case t["landuse"] == "forest":
+		return "forest", "Forest land"
+	case t["boundary"] == "protected_area" || t["leisure"] == "nature_reserve":
+		return "protected_area", "Protected area"
 	case t["amenity"] == "school":
 		return "school", ""
 	case t["amenity"] == "college" || t["amenity"] == "university":

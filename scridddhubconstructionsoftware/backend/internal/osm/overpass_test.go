@@ -80,6 +80,69 @@ func TestToPlaces_PowerLineUsesGeometryAndVoltage(t *testing.T) {
 	}
 }
 
+func TestClassify_NewLayers(t *testing.T) {
+	cases := []struct {
+		tags     map[string]string
+		kind     string
+		category string
+	}{
+		{map[string]string{"railway": "station", "name": "Kalyan Junction"}, "rail_station", domain.InfraConnectivity},
+		{map[string]string{"railway": "station", "station": "subway"}, "metro_station", domain.InfraConnectivity},
+		{map[string]string{"highway": "motorway_junction"}, "expressway_exit", domain.InfraConnectivity},
+		{map[string]string{"aeroway": "aerodrome", "iata": "BOM"}, "airport", domain.InfraConnectivity},
+		{map[string]string{"leisure": "park"}, "park", domain.InfraSocial},
+		{map[string]string{"amenity": "crematorium"}, "cemetery", domain.InfraNegative},
+		{map[string]string{"landuse": "quarry"}, "quarry", domain.InfraNegative},
+		{map[string]string{"natural": "wetland", "wetland": "mangrove"}, "mangrove", domain.InfraPlanning},
+		{map[string]string{"boundary": "protected_area"}, "protected_area", domain.InfraPlanning},
+	}
+	for _, c := range cases {
+		kind, _ := classify(c.tags)
+		if kind != c.kind || domain.CategoryForKind(kind) != c.category {
+			t.Errorf("%v: got %s/%s, want %s/%s", c.tags, kind, domain.CategoryForKind(kind), c.kind, c.category)
+		}
+	}
+}
+
+// Every kind OpenStreetMap can produce must be a known kind: CategoryForKind silently files an
+// unknown one under connectivity.
+func TestClassify_KindsAreKnown(t *testing.T) {
+	for _, tags := range []map[string]string{
+		{"railway": "station"}, {"railway": "station", "station": "subway"}, {"highway": "motorway_junction"},
+		{"aeroway": "aerodrome"}, {"leisure": "park"}, {"shop": "mall"}, {"amenity": "crematorium"},
+		{"landuse": "cemetery"}, {"landuse": "quarry"}, {"wetland": "mangrove"}, {"landuse": "forest"},
+		{"boundary": "protected_area"}, {"amenity": "school"}, {"amenity": "college"}, {"amenity": "hospital"},
+		{"landuse": "industrial"}, {"power": "substation"}, {"man_made": "water_works"}, {"landuse": "landfill"},
+		{"man_made": "wastewater_plant"}, {"power": "line"},
+	} {
+		kind, _ := classify(tags)
+		if _, ok := domain.InfraKindCategory[kind]; !ok {
+			t.Errorf("%v -> %q is not in domain.InfraKindCategory", tags, kind)
+		}
+	}
+}
+
+// A protected area fetched as a relation: its outline arrives in its members, and the nearest
+// edge (not a centre) is what distance is measured to.
+func TestToPlaces_RelationOutlineFromMembers(t *testing.T) {
+	var e element
+	if err := json.Unmarshal([]byte(`{"type":"relation","id":7,"tags":{"boundary":"protected_area","name":"Thane Creek Flamingo Sanctuary"},
+		"members":[{"geometry":[{"lat":19.10,"lon":72.98},{"lat":19.11,"lon":72.99}]},{"geometry":[{"lat":19.12,"lon":73.00}]}]}`), &e); err != nil {
+		t.Fatal(err)
+	}
+	places := toPlaces([]element{e})
+	if len(places) != 1 || len(places[0].Points) != 3 || places[0].Category != domain.InfraPlanning {
+		t.Fatalf("got %+v", places)
+	}
+}
+
+func TestQuery_ProtectedClipsOutlineToSearchBox(t *testing.T) {
+	q := query(GroupProtected, domain.GeoPoint{Latitude: 19.155, Longitude: 72.995}, 0.8)
+	if !strings.Contains(q, "out tags geom(") {
+		t.Errorf("protected areas need clipped outlines, got %s", q)
+	}
+}
+
 func TestQuery_SplitsNodeAndWayStatements(t *testing.T) {
 	q := query(GroupSocial, domain.GeoPoint{Latitude: 19.255, Longitude: 73.135}, 0.8)
 	if strings.Contains(q, "nwr[") {

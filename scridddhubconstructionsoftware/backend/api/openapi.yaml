@@ -2047,8 +2047,10 @@ components:
         existing:
           type: array
           description: >-
-            Places already there near the resolved location (schools, colleges, hospitals,
-            named industrial areas, transmission substations, water works, landfills, sewage plants, high-tension lines),
+            Places already there near the resolved location (rail/metro stations, expressway exits,
+            airports, schools, colleges, hospitals, parks, malls, named industrial areas,
+            transmission substations, water works, mangroves, forest land, protected areas,
+            landfills, sewage plants, high-tension lines, cemeteries, quarries),
             from OpenStreetMap, nearest first. Empty when the location couldn't be resolved or the
             first lookup for this area is still running.
           items:
@@ -2061,8 +2063,9 @@ components:
           type: string
         kind:
           type: string
-          enum: [school, college, hospital, industrial_estate, power_substation, water_supply,
-                 landfill, sewage_treatment, high_tension_line]
+          enum: [rail_station, metro_station, expressway_exit, airport, school, college, hospital,
+                 park, mall, industrial_estate, power_substation, water_supply, mangrove, forest,
+                 protected_area, landfill, sewage_treatment, high_tension_line, cemetery, quarry]
         category:
           type: string
           enum: [connectivity, jobs, social, utilities, planning, negative]

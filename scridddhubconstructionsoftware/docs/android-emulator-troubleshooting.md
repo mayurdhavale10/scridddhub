@@ -205,9 +205,36 @@ existed (from whatever it last talked to) and silently did nothing further.
    reaching completion (not just 0%) — that's the real signal the device pulled a fresh bundle,
    more reliable than eyeballing the emulator screen alone.
 
+## Separate issue: emulator crashes on boot ("WHPX: Unexpected VP exit code 4")
+
+**Symptom** (2026-09-28): `adb devices` shows `emulator-5554 offline` and never becomes
+`device`; `sys.boot_completed` never reaches 1. The emulator log contains
+`qemu-system-x86_64.exe: WHPX: Unexpected VP exit code 4`, then
+`Unable to connect to adb daemon on port: 5037`.
+
+**Cause:** the emulator was started while Docker Desktop was still starting. Both use the
+Windows hypervisor (WHPX / WSL2), and the emulator's virtual CPU crashed during that window.
+It resumed from its quick-boot snapshot, so the broken state stuck.
+
+**Fix:**
+1. Start Docker Desktop first and wait until `docker ps` works (see `RUNBOOK.md` §3 for the
+   per-user install path when `docker` isn't on PATH).
+2. Force-stop the stuck emulator and restart adb:
+   ```powershell
+   Get-Process qemu-system-x86_64,emulator -ErrorAction SilentlyContinue | Stop-Process -Force
+   adb kill-server; adb start-server
+   ```
+3. Cold-boot, skipping the snapshot:
+   `emulator -avd Pixel_8_Pro -scale 0.7 -no-snapshot-load`. It booted in 33 s.
+4. Then run the off-screen window check at the top of this doc. It reproduced again straight
+   after this boot (`Top=-1012`, the same coordinates as 2026-09-19).
+
 ## Known-good size for this user
 
-Confirmed comfortable and "perfect" (2026-09-19): position `(100, 100)`, size `500 × 700`. If
+Confirmed comfortable and "perfect" (2026-09-19): position `(100, 100)`, size `500 × 700`.
+Note (2026-09-28): with `-scale 0.7` the window is 408 × 863, taller than this laptop's 864-px
+screen minus a 100-px top offset, so it was placed at `(100, 0)` (position-only move) to fit
+fully. If
 starting fresh and the person wants this same size without fighting the resize-minimizes-it issue
 above, prefer setting it once via the emulator's own `-scale` launch flag (goes through the
 emulator's native rendering path, not an external resize) rather than repositioning afterward —

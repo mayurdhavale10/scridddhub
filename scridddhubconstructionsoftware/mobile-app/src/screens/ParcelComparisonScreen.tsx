@@ -54,6 +54,22 @@ function sourceAgency(name: string | undefined): string {
   return (name ?? '').split(' — ')[0].trim() || 'Official source';
 }
 
+// One credit line for the whole section, naming each agency on screen once. OpenStreetMap's
+// licence (ODbL) requires the attribution wherever its data is shown.
+function infraFooter(states: (InfraState | undefined)[]): string {
+  const agencies = new Set<string>();
+  for (const s of states) {
+    if (s && s !== 'loading') {
+      for (const it of s.items ?? [])
+        agencies.add(sourceAgency(it.source_name));
+    }
+  }
+  const official = agencies.size
+    ? ` Projects: ${[...agencies].join(', ')}.`
+    : '';
+  return `Straight-line distances.${official} Map data © OpenStreetMap contributors.`;
+}
+
 const INFRA_STATUS_LABEL: Record<string, string> = {
   planned: 'Planned',
   under_construction: 'In progress',
@@ -67,7 +83,7 @@ const INFRA_STATUS_LABEL: Record<string, string> = {
 const INFRA_GROUPS: { category: string; label: string }[] = [
   { category: 'connectivity', label: 'Connectivity' },
   { category: 'jobs', label: 'Jobs & growth' },
-  { category: 'social', label: 'Schools & hospitals' },
+  { category: 'social', label: 'Schools, hospitals & parks' },
   { category: 'utilities', label: 'Utilities' },
   { category: 'planning', label: 'Planning & zoning' },
   { category: 'negative', label: 'Watch out' },
@@ -119,6 +135,17 @@ const EXISTING_KIND_LABEL: Record<string, string> = {
   school: 'School',
   college: 'College',
   hospital: 'Hospital',
+  rail_station: 'Railway station',
+  metro_station: 'Metro station',
+  expressway_exit: 'Expressway exit',
+  airport: 'Airport',
+  park: 'Park',
+  mall: 'Mall',
+  mangrove: 'Mangroves',
+  forest: 'Forest land',
+  protected_area: 'Protected area',
+  cemetery: 'Cemetery',
+  quarry: 'Quarry',
   industrial_estate: 'Industrial area',
   power_substation: 'Power substation',
   water_supply: 'Water works',
@@ -134,7 +161,8 @@ function existingWhereText(p: ExistingPlace): string {
   const distance = km < 0.1 ? 'Under 100 m away' : `${km} km away`;
   const kind = EXISTING_KIND_LABEL[p.kind ?? ''];
   const nameSaysKind =
-    !kind || (p.name ?? '').toLowerCase().includes(kind.toLowerCase().split(' ')[0]);
+    !kind ||
+    (p.name ?? '').toLowerCase().includes(kind.toLowerCase().split(' ')[0]);
   return nameSaysKind ? distance : `${kind} · ${distance}`;
 }
 
@@ -343,7 +371,9 @@ export function ParcelComparisonScreen({ parcelIds, onBack }: Props) {
                   i > 0 && styles.infraParcelBlockDivider,
                 ]}
               >
-                <Text style={styles.noteCellName}>{r.parcel.name}</Text>
+                <View style={styles.infraParcelHeader}>
+                  <Text style={styles.infraParcelName}>{r.parcel.name}</Text>
+                </View>
                 {state === 'loading' ? (
                   <View style={styles.infraLoading}>
                     <ActivityIndicator
@@ -403,21 +433,22 @@ export function ParcelComparisonScreen({ parcelIds, onBack }: Props) {
                               <Text style={styles.infraDistance}>
                                 {existingWhereText(p)}
                               </Text>
-                              <Pressable
-                                onPress={() =>
-                                  p.source_url && Linking.openURL(p.source_url)
-                                }
-                              >
-                                <Text style={styles.infraSource}>
-                                  Source: OpenStreetMap
-                                </Text>
-                              </Pressable>
                             </View>
                           );
                         }
                         const item = row.planned;
+                        // Per-item source lines were removed (owner, 2026-09-28: cluttered). Sources
+                        // are credited once in the footer; tapping a planned project still opens
+                        // its official page.
                         return (
-                          <View key={item.project_id} style={styles.infraItem}>
+                          <Pressable
+                            key={item.project_id}
+                            style={styles.infraItem}
+                            onPress={() =>
+                              item.source_url &&
+                              Linking.openURL(item.source_url)
+                            }
+                          >
                             <Text style={styles.infraName}>{item.name}</Text>
                             <Text style={styles.infraDistance}>
                               {whereText(item)}
@@ -425,19 +456,7 @@ export function ParcelComparisonScreen({ parcelIds, onBack }: Props) {
                             <Text style={styles.infraStatus}>
                               {statusText(item)}
                             </Text>
-                            <Pressable
-                              onPress={() =>
-                                item.source_url &&
-                                Linking.openURL(item.source_url)
-                              }
-                            >
-                              {/* Who/what verified it (verified_by) is internal provenance, not shown. */}
-                              <Text style={styles.infraSource}>
-                                Source: {sourceAgency(item.source_name)} ·
-                                Updated {formatDate(item.verified_at!)}
-                              </Text>
-                            </Pressable>
-                          </View>
+                          </Pressable>
                         );
                       })}
                       {hidden > 0 ? (
@@ -456,7 +475,7 @@ export function ParcelComparisonScreen({ parcelIds, onBack }: Props) {
             );
           })}
           <Text style={styles.infraAttribution}>
-            Straight-line distances. Map data © OpenStreetMap contributors.
+            {infraFooter(rows.map(r => infra[r.parcel.id!]))}
           </Text>
         </View>
       </View>
@@ -688,11 +707,22 @@ const styles = StyleSheet.create({
   infraParcelBlock: {
     gap: 6,
   },
+  // Each parcel reads as its own section (owner, 2026-09-28): a shaded band with a larger name,
+  // clearly above the item names (14px) and group labels.
   infraParcelBlockDivider: {
-    borderTopWidth: 1,
-    borderTopColor: colors.outlineVariant,
-    marginTop: 10,
-    paddingTop: 10,
+    marginTop: 22,
+  },
+  infraParcelHeader: {
+    backgroundColor: colors.surfaceContainer,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 2,
+  },
+  infraParcelName: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: colors.onSurface,
   },
   infraLoading: {
     flexDirection: 'row',
@@ -734,11 +764,6 @@ const styles = StyleSheet.create({
   infraStatus: {
     fontSize: 13,
     color: colors.onSurface,
-  },
-  infraSource: {
-    fontSize: 12,
-    color: colors.onSurfaceVariant,
-    textDecorationLine: 'underline',
   },
   infraDistance: {
     fontSize: 13.5,
