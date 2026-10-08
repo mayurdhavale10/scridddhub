@@ -128,3 +128,68 @@ already open (verify): Sahar Elevated Road (~2014), Extension of Harbour Line to
   real points (bridge ends at Sewri and Nhava Sheva) before approval.
 - Kurla–CST 5th/6th lines, Borivali–Mumbai Central 6th line: only two end points each on long
   routes — distances would mislead mid-route.
+
+### 2026-09-29 — MSRDC, NHSRCL and area-search results (Claude, at Mayur's request)
+
+Recorded as `verified_by = "Claude review 2026-09-29 (requested by Mayur Dhavale)"`. From the
+first successful scheduled run (00:54) plus a re-run of MSRDC's project list. 32 pending before.
+
+**Wrong points removed** (out-of-region names placed on same-named streets/buildings in Mumbai, or
+a road's name placed at its far end):
+- Bullet train: Sabarmati, Ahmedabad, Anand, Vadodara (all Gujarat) — each put inside Mumbai.
+- JVLR and Suman Nagar flyover: "Eastern Express Highway" at 18.94 (CST end, ~20 km off).
+- Suman Nagar flyover: "V N Purav Marg" at its Mankhurd end.
+- NH 166D: "Alibag", "Raigad" (Raigad placed at 19.147 in Mumbai).
+- Samruddhi and Nagpur IRDP: "Mumbai" (city centroid).
+- Nagpur–Mumbai road: "Karanja" (Uran, not Washim) and "Amravati" (in Mumbai).
+- Both pipelines: "Kune" (near Lonavala, not the Pen/Alibag village).
+
+Root cause fixed the same day in `locate/`.
+
+**Approved (7):**
+- Mumbai–Ahmedabad bullet train: BKC and Virar points only for now; Thane and Boisar weren't
+  located.
+- Mumbai–Pune Missing Link: Khopoli exit, Adoshi tunnel, Khandala exit, Khalapur toll.
+- Versova–Bandra Sea Link.
+- Mumbai–Pune Expressway: operational.
+- JVLR: operational; west end point only.
+- Panvel–Karjat rail doubling.
+- NH-4B/NH-348 widening around NMIA/JNPT.
+
+**Rejected (18)** — undo with `reopen`:
+- Old flyovers and bridges whose own page dates them 2008–2012 but states no status, so they
+  would show as "Planned / in progress":
+  - Dindoshi (two entries), Burfiwala (Andheri), Santacruz airport, Malad (Times of India),
+    Thakur Complex (Kandivali).
+  - Kanjurmarg ROB (page says "under construction, 2008").
+  - Panvel flyover (2012).
+- Suman Nagar flyover: open since 2011, but no reliable point.
+- 50 Flyovers programme: a city-wide programme; its points were just road and area names.
+- Outside the Mumbai region or no point at all: Kolhapur, Amravati and Nagpur road programmes;
+  ROB on LC 90C; ROB on diversion road; Nagpur–Aurangabad–Sinnar–Ghoti–Mumbai road.
+- Uran–Usar propane pipeline and MIDC 700 mm pipeline: we have no pipeline kind yet (they'd show
+  under Connectivity). Revisit as "pipeline corridor" in Planning & zoning.
+
+**Left pending (7) — for you:**
+- Metro Line 7, Atal Setu, Kurla–CST 5th/6th, Borivali–Mumbai Central 6th: same reasons as
+  2026-09-27 (Atal Setu now has only a "Navi Mumbai" centroid point).
+- Samruddhi Expressway: relevant (its Mumbai end is at Amane, Bhiwandi), but no reliable point.
+- NH 166D Pen–Khopoli: real, but needs Pen and Khopoli points.
+- Bandra–Worli Sea Link: page states no status, so it would show "Planned / in progress";
+  open since 2009. Needs a status correction.
+
+**Fixes the same day, with evidence (new `set-status` and `add-point` commands):**
+- Metro Line 7: status set to **operational**, citing MMRDA's own page: "5.8 km with 4 stations
+  (Gundavali, Mogra, Jogeshwari(East), Goregaon(East)) is operational from 19th January, 2023."
+  The extractor had missed that line. Now **approved**.
+- Atal Setu: points **Sewri** and **Nhavasheva** (looked up as "Nhava"), both named in the page
+  title "SEWRI – NHAVASHEVA ATAL SETU (MTHL)"; the "Navi Mumbai" centroid removed. Now **approved**.
+- NH 166D: points **Pen** and **Khopoli**, from "Pen Khopoli KM 00+000 to KM 33+328". Now
+  **approved**.
+- Bullet train: **Boisar** station added (named on NHSRCL's overview).
+- A made-up quote for Bandra–Worli was refused by `set-status`, as it should be.
+
+**Still pending (4), because no official page supports a fix:**
+- Bandra–Worli Sea Link: MSRDC's page never says it opened.
+- Samruddhi Expressway: MSRDC's page names neither its Mumbai end nor a status.
+- Kurla–CST 5th/6th and Borivali–Mumbai Central 6th: the page lists no stations in between.

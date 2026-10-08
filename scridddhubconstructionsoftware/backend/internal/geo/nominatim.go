@@ -63,6 +63,7 @@ type nominatimResult struct {
 	Lat         string `json:"lat"`
 	Lon         string `json:"lon"`
 	DisplayName string `json:"display_name"`
+	AddressType string `json:"addresstype"` // jsonv2: "suburb", "village", "building", "road"...
 }
 
 func (g *NominatimGeocoder) Search(ctx context.Context, query string) (usecase.GeocodeResult, error) {
@@ -104,6 +105,7 @@ func (g *NominatimGeocoder) Search(ctx context.Context, query string) (usecase.G
 		Found:       true,
 		Point:       domain.GeoPoint{Latitude: lat, Longitude: lng},
 		DisplayName: results[0].DisplayName,
+		PlaceType:   results[0].AddressType,
 	}, nil
 }
 

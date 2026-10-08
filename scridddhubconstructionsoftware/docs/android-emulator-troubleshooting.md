@@ -229,6 +229,29 @@ It resumed from its quick-boot snapshot, so the broken state stuck.
 4. Then run the off-screen window check at the top of this doc. It reproduced again straight
    after this boot (`Top=-1012`, the same coordinates as 2026-09-19).
 
+## Separate issue: Android build fails with "Filename longer than 260 characters"
+
+**Symptom** (2026-09-29, after adding `react-native-webview`): the C++ step fails with
+`ninja: error: Stat(...safeareacontext...RNCSafeAreaViewShadowNode.cpp.o): Filename longer than
+260 characters`. Also, `npx react-native run-android` from Git Bash can't find `gradlew.bat`.
+
+**Cause:** the project lives deep in `Downloads\scridddhub\scridddhubconstructionsoftware\...`.
+Adding a native module regenerates the C++ build tree, and its object paths go past Windows'
+260-character limit.
+
+**Fix (no admin needed):** build from a short drive letter mapped to the app folder, in
+PowerShell, then remove the mapping:
+```powershell
+subst S: "C:\Users\dhava\Downloads\scridddhub\scridddhubconstructionsoftware\mobile-app"
+Remove-Item -Recurse -Force "C:\Users\dhava\Downloads\scridddhub\scridddhubconstructionsoftware\mobile-app\android\app\.cxx"
+Set-Location S:\android
+.\gradlew.bat app:installDebug -PreactNativeDevServerPort=8081 -PreactNativeArchitectures=x86_64
+subst S: /D
+```
+`.cxx` is only a build cache, and deleting it is safe. `x86_64` is the emulator's architecture,
+which is also faster to build. Only needed after adding or upgrading a native package; plain JS
+changes reload through Metro.
+
 ## Known-good size for this user
 
 Confirmed comfortable and "perfect" (2026-09-19): position `(100, 100)`, size `500 × 700`.
@@ -240,3 +263,39 @@ above, prefer setting it once via the emulator's own `-scale` launch flag (goes 
 emulator's native rendering path, not an external resize) rather than repositioning afterward —
 e.g. `-scale 0.5` gets close, then a **position-only** `SetWindowPos` (no size change) to `(100,
 100)` if it lands off-screen per the main issue in this doc.
+
+## Emulator closes right after starting (corrupted quick-boot snapshot)
+
+Seen 2026-10-05 after the laptop hung. The emulator starts and exits within seconds; its error
+log shows `error while loading state ... virtio-snd` and `WHPX: Unexpected VP exit code 4`.
+The saved quick-boot snapshot was corrupted. Cold boot once, skipping the snapshot:
+
+```powershell
+& "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -avd Pixel_8_Pro -no-snapshot-load
+```
+
+Apps and data inside the emulator are kept. The first cold boot can show "System UI isn't
+responding": tap **Wait**. After a cold boot the window may open at (-25600, -25600); move it
+on screen the same way as the off-screen fix above.
+
+## Building a demo APK for a real phone (2026-10-08)
+
+The demo APK talks to the backend on the laptop over the local Wi-Fi (`DEMO_HOST` in
+`mobile-app/src/api/client.ts`, now `http://192.168.0.102:8080`). The phone must be on the same
+Wi-Fi, and the backend must be running as `backend/bin/scridddhub-server.exe` (a fixed path, so the
+Windows firewall rule allowing it keeps working). If the laptop's address changes (`ipconfig`),
+update `DEMO_HOST` and rebuild.
+
+1. Bundle the JS from the real path. Metro can't bundle from the `S:` drive:
+   `npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android\app\src\main\assets\index.android.bundle --assets-dest android\app\src\main\res`
+2. Build from the short drive. Native paths are too long on C:. `RN_PREBUNDLED=1` makes the
+   build use the bundle from step 1 instead of bundling again:
+   `subst S: <mobile-app>` then `$env:RN_PREBUNDLED='1'; cd S:\android; .\gradlew.bat app:assembleRelease -PreactNativeArchitectures=arm64-v8a`
+3. The APK is at `android/app/build/outputs/apk/release/app-release.apk`.
+4. Delete the generated `src/main/assets/`, `res/drawable-mdpi/` and `res/raw/` afterwards.
+   Otherwise debug builds load the stale bundle.
+
+Limits:
+- It's signed with the debug key. That's fine for sideloading, not for the Play Store.
+- It uses plain HTTP, which is allowed only in release builds through `manifestPlaceholders`.
+- It's arm64 only, so it covers real phones but not the x86_64 emulator.

@@ -1,5 +1,10 @@
 # Estimated Parcel Value
 
+> 2026-09-29 source update: the current E-DISPlay form also accepts registration year in its
+> search field and requires CAPTCHA. Older statements below about known-property-only search
+> describe earlier research, not a verified restriction of the current portal. See the
+> [registered-transactions source investigation](../registeredtransactions/README.md#current-source-investigation).
+
 Feature owner: Land Parcels (Level 1 Planning), "Just checking a location" flow (Screen 4.2).
 
 ---

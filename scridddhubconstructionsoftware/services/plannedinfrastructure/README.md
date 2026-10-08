@@ -7,6 +7,8 @@ locations are resolved by geocoding, not name matching).
 
 **Getting it running:** [RUNBOOK.md](RUNBOOK.md) — setup, daily startup, commands, schedule,
 limits, troubleshooting. **Approving projects:** [REVIEW_GUIDE.md](REVIEW_GUIDE.md).
+**What the Compare screen shows** (the six groups, sources, distances, gaps):
+[COMPARE_SCREEN_GUIDE.md](COMPARE_SCREEN_GUIDE.md).
 
 **Status (2026-09-27):** distance matching, source pipeline (Step B, MMRDA), on-demand search for
 uncovered areas via Exa (Step C) and a daily 1 PM scheduled run (Step D) are built and running.

@@ -7,6 +7,14 @@ apply plugin: "com.facebook.react"
  * By default you don't need to apply any configuration, just uncomment the lines you need.
  */
 react {
+    // Release APKs are built from a short `subst S:` drive (native paths are too long otherwise),
+    // but Metro maps files by their real C:\ path and can't bundle from S:. So the JS bundle is
+    // made beforehand from C: (`react-native bundle ... --bundle-output
+    // android/app/src/main/assets/index.android.bundle`), and RN_PREBUNDLED=1 tells the build not
+    // to bundle again for release. See docs/android-emulator-troubleshooting.md.
+    if (System.getenv("RN_PREBUNDLED")) {
+        debuggableVariants = ["debug", "release"]
+    }
     /* Folders */
     //   The root of your project, i.e. where "package.json" lives. Default is '../..'
     // root = file("../../")
@@ -101,6 +109,9 @@ android {
             // Caution! In production, you need to generate your own keystore file.
             // see https://reactnative.dev/docs/signed-apk-android.
             signingConfig signingConfigs.debug
+            // Demo builds talk to the backend on the laptop over plain HTTP on the local Wi-Fi.
+            // Remove once the backend is served over HTTPS.
+            manifestPlaceholders = [usesCleartextTraffic: "true"]
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }

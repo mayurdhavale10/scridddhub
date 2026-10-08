@@ -37,4 +37,9 @@ export const colors = {
   onSurfaceVariant: '#6b7280',
   outline: '#a3a3a3',
   outlineVariant: '#d4d4d4',
+
+  // Light blue for neutral info chips (e.g. what the AI understood on Screen 7), matching the
+  // Stitch design (owner, 2026-10-03). Kept apart from the green success accent.
+  infoContainer: '#e8eff6',
+  onInfoContainer: '#2b4a63',
 } as const;

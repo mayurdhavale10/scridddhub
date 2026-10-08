@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -60,6 +61,16 @@ type LandParcel struct {
 	District *string
 	Taluka   *string
 	Village  *string
+	// SurveyNumber is the survey/gat number with hissa as written on the 7/12 (e.g. "45/2A").
+	// With District/Taluka/Village it identifies the land in the government's land records.
+	SurveyNumber *string
+	// Latitude/Longitude are where the parcel actually is, captured from the person who knows
+	// (docs/design/parcel-location-first-principles.md): nil until someone pins it. Nearby and
+	// planned infrastructure use these first and fall back to geocoding Location.
+	Latitude       *float64
+	Longitude      *float64
+	LocationSource *string // pin | gps | maps_link | village | text
+	LocationSetAt  *time.Time
 	// ClosedPriceRupees/ClosedAt record the real, final transacted price once a deal actually
 	// closes — distinct from CostRupees (an asking price, captured once at creation, never
 	// re-verified). Only these two fields are legitimate ground truth for a future pricing model;
@@ -96,6 +107,18 @@ func (p *LandParcel) Validate() error {
 	if !p.Stage.Valid() {
 		return fmt.Errorf("invalid stage: %q", p.Stage)
 	}
+	if (p.Latitude == nil) != (p.Longitude == nil) {
+		return fmt.Errorf("latitude and longitude go together")
+	}
+	if p.Latitude != nil {
+		source := ""
+		if p.LocationSource != nil {
+			source = *p.LocationSource
+		}
+		if err := ValidateParcelLocation(*p.Latitude, *p.Longitude, source); err != nil {
+			return err
+		}
+	}
 	if p.ClosedPriceRupees != nil {
 		if *p.ClosedPriceRupees <= 0 {
 			return fmt.Errorf("closed_price_rupees must be positive")
@@ -105,6 +128,60 @@ func (p *LandParcel) Validate() error {
 		}
 	}
 	return nil
+}
+
+// MissingLandRecordIDs lists what's still needed to look the parcel up in the land records
+// (7/12, Ferfar, Index-II): survey number, village, taluka and district.
+func (p *LandParcel) MissingLandRecordIDs() []string {
+	var missing []string
+	for _, f := range []struct {
+		name string
+		v    *string
+	}{{"survey number", p.SurveyNumber}, {"village", p.Village}, {"taluka", p.Taluka}, {"district", p.District}} {
+		if f.v == nil || strings.TrimSpace(*f.v) == "" {
+			missing = append(missing, f.name)
+		}
+	}
+	return missing
+}
+
+// ValidateSurveyNumber accepts survey/gat numbers as written on a 7/12: digits with an optional
+// hissa ("45", "45/2", "45/2A", "112/1/B", "45 पैकी").
+func ValidateSurveyNumber(s string) error {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return fmt.Errorf("survey number is required")
+	}
+	if len(s) > 40 {
+		return fmt.Errorf("survey number is too long")
+	}
+	if !strings.ContainsAny(s, "0123456789०१२३४५६७८९") {
+		return fmt.Errorf("survey number must contain a number, e.g. 45/2A")
+	}
+	return nil
+}
+
+// ParcelLocationSources are how a parcel's coordinates were obtained, most to least precise.
+var ParcelLocationSources = []string{"pin", "gps", "maps_link", "village", "text"}
+
+// India's extent, generously padded: a point outside it is a typo or swapped lat/lng, not land
+// anyone here is buying.
+const (
+	indiaMinLat, indiaMaxLat = 6.0, 37.5
+	indiaMinLng, indiaMaxLng = 68.0, 97.5
+)
+
+// ValidateParcelLocation checks a pinned location before it's stored.
+func ValidateParcelLocation(lat, lng float64, source string) error {
+	if lat < indiaMinLat || lat > indiaMaxLat || lng < indiaMinLng || lng > indiaMaxLng {
+		return fmt.Errorf("location %.5f,%.5f is outside India (latitude and longitude swapped?)", lat, lng)
+	}
+	for _, s := range ParcelLocationSources {
+		if s == source {
+			return nil
+		}
+	}
+	return fmt.Errorf("location_source must be one of %v, got %q", ParcelLocationSources, source)
 }
 
 // The old comparable-based PriceEstimate/EstimatePrice (which compared a parcel against other

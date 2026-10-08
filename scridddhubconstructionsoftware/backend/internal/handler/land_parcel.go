@@ -31,6 +31,16 @@ type createLandParcelRequest struct {
 	Taluka     *string   `json:"taluka"`
 	Village    *string   `json:"village"`
 	Notes      string    `json:"notes"`
+	// Optional: where the parcel actually is, if already pinned while adding it.
+	Latitude       *float64 `json:"latitude"`
+	Longitude      *float64 `json:"longitude"`
+	LocationSource *string  `json:"location_source"`
+}
+
+type setLocationRequest struct {
+	Latitude       float64 `json:"latitude"`
+	Longitude      float64 `json:"longitude"`
+	LocationSource string  `json:"location_source"`
 }
 
 type recordClosedPriceRequest struct {
@@ -55,12 +65,17 @@ type landParcelResponse struct {
 	District          *string   `json:"district"`
 	Taluka            *string   `json:"taluka"`
 	Village           *string   `json:"village"`
+	SurveyNumber      *string   `json:"survey_number"`
 	ClosedPriceRupees *int64    `json:"closed_price_rupees"`
 	ClosedAt          *string   `json:"closed_at"`
 	Stage             string    `json:"stage"`
 	Notes             string    `json:"notes"`
 	CreatedAt         string    `json:"created_at"`
 	UpdatedAt         string    `json:"updated_at"`
+	Latitude          *float64  `json:"latitude"`
+	Longitude         *float64  `json:"longitude"`
+	LocationSource    *string   `json:"location_source"`
+	LocationSetAt     *string   `json:"location_set_at"`
 }
 
 func toLandParcelResponse(p *domain.LandParcel) landParcelResponse {
@@ -74,7 +89,16 @@ func toLandParcelResponse(p *domain.LandParcel) landParcelResponse {
 		formatted := p.ClosedAt.Format(timeFormat)
 		closedAt = &formatted
 	}
+	var locationSetAt *string
+	if p.LocationSetAt != nil {
+		formatted := p.LocationSetAt.Format(timeFormat)
+		locationSetAt = &formatted
+	}
 	return landParcelResponse{
+		Latitude:          p.Latitude,
+		Longitude:         p.Longitude,
+		LocationSource:    p.LocationSource,
+		LocationSetAt:     locationSetAt,
 		ID:                p.ID,
 		ProjectID:         p.ProjectID,
 		Name:              p.Name,
@@ -88,6 +112,7 @@ func toLandParcelResponse(p *domain.LandParcel) landParcelResponse {
 		District:          p.District,
 		Taluka:            p.Taluka,
 		Village:           p.Village,
+		SurveyNumber:      p.SurveyNumber,
 		ClosedPriceRupees: p.ClosedPriceRupees,
 		ClosedAt:          closedAt,
 		Stage:             string(p.Stage),
@@ -117,6 +142,10 @@ func (h *LandParcelHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Taluka:     req.Taluka,
 		Village:    req.Village,
 		Notes:      req.Notes,
+
+		Latitude:       req.Latitude,
+		Longitude:      req.Longitude,
+		LocationSource: req.LocationSource,
 	}
 	actor := middleware.ActorFromContext(r.Context())
 	if err := h.usecase.Create(r.Context(), actor, parcel); err != nil {
@@ -219,6 +248,65 @@ func (h *LandParcelHandler) RecordClosedPrice(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	writeJSON(w, http.StatusOK, toLandParcelResponse(parcel))
+}
+
+// SetLocation records where the parcel actually is: a pin dropped on the map, GPS while standing
+// on the land, or a pasted Google Maps link (docs/design/parcel-location-first-principles.md).
+func (h *LandParcelHandler) SetLocation(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	var req setLocationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	actor := middleware.ActorFromContext(r.Context())
+	parcel, err := h.usecase.SetLocation(r.Context(), actor, id, req.Latitude, req.Longitude, req.LocationSource)
+	if err != nil {
+		if err == domain.ErrNotFound {
+			writeNotFoundOrError(w, err)
+			return
+		}
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toLandParcelResponse(parcel))
+}
+
+type setLandRecordRequest struct {
+	District     string `json:"district"`
+	Taluka       string `json:"taluka"`
+	Village      string `json:"village"`
+	SurveyNumber string `json:"survey_number"`
+}
+
+// SetLandRecord handles PUT /land-parcels/{id}/land-record: the district, taluka, village and
+// survey/gat number that identify the parcel on its 7/12.
+func (h *LandParcelHandler) SetLandRecord(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	var req setLandRecordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	actor := middleware.ActorFromContext(r.Context())
+	parcel, err := h.usecase.SetLandRecord(r.Context(), actor, id, req.District, req.Taluka, req.Village, req.SurveyNumber)
+	if err != nil {
+		if err == domain.ErrNotFound {
+			writeNotFoundOrError(w, err)
+			return
+		}
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, toLandParcelResponse(parcel))
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -21,6 +22,8 @@ type LandParcelRepository interface {
 	UpdateStage(ctx context.Context, actor string, id uuid.UUID, stage domain.LandParcelStage) (*domain.LandParcel, error)
 	UpdateSourceVerifiedAt(ctx context.Context, actor string, id uuid.UUID, verifiedAt time.Time) (*domain.LandParcel, error)
 	RecordClosedPrice(ctx context.Context, actor string, id uuid.UUID, closedPriceRupees int64, closedAt time.Time) (*domain.LandParcel, error)
+	SetLocation(ctx context.Context, actor string, id uuid.UUID, lat, lng float64, source string) (*domain.LandParcel, error)
+	SetLandRecord(ctx context.Context, actor string, id uuid.UUID, district, taluka, village, surveyNumber string) (*domain.LandParcel, error)
 }
 
 type LandParcelUsecase struct {
@@ -54,6 +57,28 @@ func (u *LandParcelUsecase) UpdateStage(ctx context.Context, actor string, id uu
 		return nil, domain.ErrInvalidStage
 	}
 	return u.repo.UpdateStage(ctx, actor, id, stage)
+}
+
+// SetLocation records where the parcel actually is — a pin, GPS on site, or a pasted Maps link.
+func (u *LandParcelUsecase) SetLocation(ctx context.Context, actor string, id uuid.UUID, lat, lng float64, source string) (*domain.LandParcel, error) {
+	if err := domain.ValidateParcelLocation(lat, lng, source); err != nil {
+		return nil, err
+	}
+	return u.repo.SetLocation(ctx, actor, id, lat, lng, source)
+}
+
+// SetLandRecord records the district, taluka, village and survey/gat number that identify the
+// parcel on its 7/12. All four are needed for any land record lookup.
+func (u *LandParcelUsecase) SetLandRecord(ctx context.Context, actor string, id uuid.UUID, district, taluka, village, surveyNumber string) (*domain.LandParcel, error) {
+	district, taluka, village = strings.TrimSpace(district), strings.TrimSpace(taluka), strings.TrimSpace(village)
+	surveyNumber = strings.TrimSpace(surveyNumber)
+	if district == "" || taluka == "" || village == "" {
+		return nil, fmt.Errorf("district, taluka and village are all required")
+	}
+	if err := domain.ValidateSurveyNumber(surveyNumber); err != nil {
+		return nil, err
+	}
+	return u.repo.SetLandRecord(ctx, actor, id, district, taluka, village, surveyNumber)
 }
 
 // The old comparable-based EstimatePrice was removed 2026-09-19 per docs/adr/0004 — see

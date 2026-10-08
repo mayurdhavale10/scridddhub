@@ -42,10 +42,41 @@ type feasibilityAssessmentResponse struct {
 	ComparableSalesNote    string     `json:"comparable_sales_note"`
 	CreatedAt              string     `json:"created_at"`
 	UpdatedAt              string     `json:"updated_at"`
+
+	// Valuation Summary (Assess); absent for a manual assessment.
+	CurrentLowRupees  *int64                 `json:"current_low_rupees"`
+	CurrentHighRupees *int64                 `json:"current_high_rupees"`
+	FutureLowRupees   *int64                 `json:"future_low_rupees"`
+	FutureHighRupees  *int64                 `json:"future_high_rupees"`
+	Method            string                 `json:"method"`
+	Basis             *domain.ValuationBasis `json:"basis"`
+	Reasoning         string                 `json:"reasoning"`
+	AssessedAt        *string                `json:"assessed_at"`
 }
 
 func toFeasibilityAssessmentResponse(a *domain.FeasibilityAssessment) feasibilityAssessmentResponse {
+	method := a.Method
+	if method == "" {
+		method = "manual"
+	}
+	var basis *domain.ValuationBasis
+	var assessedAt *string
+	if method == "ai_assessed" {
+		basis = &a.Basis
+	}
+	if a.AssessedAt != nil {
+		s := a.AssessedAt.Format(timeFormat)
+		assessedAt = &s
+	}
 	return feasibilityAssessmentResponse{
+		CurrentLowRupees:       a.CurrentLowRupees,
+		CurrentHighRupees:      a.CurrentHighRupees,
+		FutureLowRupees:        a.FutureLowRupees,
+		FutureHighRupees:       a.FutureHighRupees,
+		Method:                 method,
+		Basis:                  basis,
+		Reasoning:              a.Reasoning,
+		AssessedAt:             assessedAt,
 		ID:                     a.ID,
 		LandParcelID:           a.LandParcelID,
 		CurrentValuationRupees: a.CurrentValuationRupees,

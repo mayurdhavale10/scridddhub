@@ -9,6 +9,41 @@ servers:
   - url: http://localhost:8080
 
 paths:
+  /land-parcels/{parcelID}/registered-transactions:
+    get:
+      operationId: nearbyRegisteredTransactionsForParcel
+      summary: Database-first registered land sales, with on-demand coverage status
+      parameters:
+        - name: parcelID
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Sales within 3 km of the pin, or the same village; 6 months extended to 12 if sparse
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NearbyRegisteredTransactions" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /reference/registered-transactions:
+    get:
+      operationId: nearbyRegisteredTransactionsForLocation
+      summary: Look up sales before saving a parcel; supply a pin or district, taluka and village
+      parameters:
+        - { name: latitude, in: query, schema: { type: number, minimum: 15, maximum: 23 } }
+        - { name: longitude, in: query, schema: { type: number, minimum: 72, maximum: 81 } }
+        - { name: district, in: query, schema: { type: string } }
+        - { name: taluka, in: query, schema: { type: string } }
+        - { name: village, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Available registered land sales and source coverage
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NearbyRegisteredTransactions" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
   /projects:
     post:
       operationId: createProject
@@ -349,6 +384,201 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /land-parcels/{id}/location:
+    put:
+      operationId: setLandParcelLocation
+      summary: Record where the parcel actually is — a pin, GPS on site, or a pasted Maps link
+      description: >-
+        Land has no street address, so geocoding free text is only a guess
+        (docs/design/parcel-location-first-principles.md). Nearby and planned infrastructure use
+        these coordinates first. Audited like every parcel change.
+      parameters:
+        - $ref: "#/components/parameters/LandParcelId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [latitude, longitude, location_source]
+              properties:
+                latitude:
+                  type: number
+                longitude:
+                  type: number
+                location_source:
+                  $ref: "#/components/schemas/LocationSource"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LandParcel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /land-parcels/{id}/land-record:
+    put:
+      operationId: setLandParcelLandRecord
+      summary: Record how the parcel is identified on its 7/12
+      description: >-
+        District, taluka, village and survey/gat number. Every land record lookup (7/12, Ferfar,
+        Index-II) needs all four, so ordering a Due-Diligence Report requires them. Audited.
+      parameters:
+        - $ref: "#/components/parameters/LandParcelId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [district, taluka, village, survey_number]
+              properties:
+                district:
+                  type: string
+                taluka:
+                  type: string
+                village:
+                  type: string
+                survey_number:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LandParcel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /land-parcels/{id}/seven-twelve/read:
+    post:
+      operationId: readSevenTwelve
+      summary: Read a photo of the parcel's 7/12 into a draft (nothing is saved)
+      description: >-
+        The body is the photo itself. A vision model reads it; a person must check every field and
+        confirm with PUT /land-parcels/{id}/seven-twelve. Warning flags are worked out by rules.
+      parameters:
+        - $ref: "#/components/parameters/LandParcelId"
+      requestBody:
+        required: true
+        content:
+          image/jpeg:
+            schema: { type: string, format: binary }
+          image/png:
+            schema: { type: string, format: binary }
+          image/webp:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: Draft
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SevenTwelveDraft"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: Not a readable photo
+        "503":
+          description: Reading isn't configured
+
+  /land-parcels/{id}/seven-twelve:
+    get:
+      operationId: getSevenTwelve
+      summary: The parcel's confirmed 7/12 (404 until confirmed)
+      parameters:
+        - $ref: "#/components/parameters/LandParcelId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LandRecord"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: confirmSevenTwelve
+      summary: Save the 7/12 after a person has checked it
+      parameters:
+        - $ref: "#/components/parameters/LandParcelId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  $ref: "#/components/schemas/SevenTwelve"
+                read_by:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LandRecord"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /reference/location-guess:
+    get:
+      operationId: guessLocation
+      summary: Best guess for a free-text location — where the pin starts before the user moves it
+      parameters:
+        - name: location
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PointGuess"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /reference/map-link:
+    get:
+      operationId: resolveMapLink
+      summary: Coordinates from a pasted Google Maps link (short links are expanded)
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PointGuess"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          description: Not a Google Maps link, or the link has no pinned location in it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /reference/pricing-pool/closed-transactions:
     get:
       operationId: listPooledClosedTransactions
@@ -427,6 +657,39 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /land-parcels/{parcelID}/valuation:
+    post:
+      operationId: assessParcelValuation
+      summary: Value any saved parcel now and in 5 years, and compare with its asking price
+      description: >-
+        Valuation Summary "Assess" (services/valuationsummary/README.md). Uses whatever is known
+        about the parcel (Ready Reckoner rate, nearby infrastructure from its pin or location,
+        nearby registered sales) to get AI per-acre ranges; totals, the comparison with the
+        asking price and the verdict are computed in code. Stored as the parcel's feasibility
+        assessment, with a record of what it was based on. One AI call per request.
+      parameters:
+        - name: parcelID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeasibilityAssessment"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: The parcel has no area recorded, so no total value can be given
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /land-parcels/{parcelID}/planned-infrastructure:
     get:
       operationId: getPlannedInfrastructure
@@ -486,6 +749,25 @@ paths:
           $ref: "#/components/responses/BadRequest"
 
   /land-parcels/{parcelID}/legal-check:
+    post:
+      operationId: startLegalCheck
+      summary: Start a parcel's legal check (Screen 6) — returns the existing check, or creates the standard checklist (every risk not_checked, three searches, five documents)
+      parameters:
+        - name: parcelID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegalCheck"
+        "400":
+          $ref: "#/components/responses/BadRequest"
     put:
       operationId: upsertLegalCheck
       summary: Set (create or replace) a parcel's legal & RERA check (Screen 6)
@@ -511,6 +793,12 @@ paths:
                 $ref: "#/components/schemas/LegalCheck"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "422":
+          description: Marked cleared while a risk is not_checked or a search isn't done
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     get:
       operationId: getLegalCheck
       summary: Get a parcel's legal & RERA check (Screen 6)
@@ -530,6 +818,240 @@ paths:
                 $ref: "#/components/schemas/LegalCheck"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /rera/promoters:
+    get:
+      operationId: searchReraPromoters
+      summary: Find promoters (developers/sellers) in collected public MahaRERA records (Screen 6 RERA history)
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK (empty for fewer than 3 characters)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RERAPromoterMatch"
+
+  /rera/promoters/history:
+    get:
+      operationId: getReraPromoterHistory
+      summary: A promoter's registered MahaRERA projects and complaint count
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RERAPromoterHistory"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /land-parcels/{parcelID}/tenure:
+    get:
+      operationId: getParcelTenure
+      summary: How this deal's land is acquired, outright or JDA (Screen 8.9); 404 until recorded
+      parameters:
+        - name: parcelID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParcelTenure"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: upsertParcelTenure
+      summary: Record how this deal's land is acquired (Screen 8.9)
+      parameters:
+        - name: parcelID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ParcelTenureInput"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParcelTenure"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /land-parcels/{parcelID}/reports:
+    post:
+      operationId: createReport
+      summary: Order a Parcel Due-Diligence Report (screen 6.1); creates a draft
+      parameters:
+        - name: parcelID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tier]
+              properties:
+                tier:
+                  type: string
+                  enum: [quick, full]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportSummary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    get:
+      operationId: listReports
+      summary: A parcel's reports, newest first
+      parameters:
+        - name: parcelID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReportSummary"
+
+  /reports/{reportID}:
+    get:
+      operationId: getReport
+      summary: A report with all its sections (frozen once signed or issued)
+      parameters:
+        - name: reportID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportDetail"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: updateReport
+      summary: Save sections D, E and H on a draft report
+      parameters:
+        - name: reportID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReportEdits"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportSummary"
+        "409":
+          description: The report is signed or issued and can't change
+
+  /reports/{reportID}/draft-verdict:
+    post:
+      operationId: draftReportVerdict
+      summary: The AI drafts the verdict, summary and fix list from sections A to G
+      parameters:
+        - name: reportID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportSummary"
+
+  /reports/{reportID}/finalise:
+    post:
+      operationId: finaliseReport
+      summary: Sign a Full report (advocate required) or issue a Quick Screen, and freeze it
+      parameters:
+        - name: reportID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                advocate_name:
+                  type: string
+                advocate_enrolment:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportSummary"
+        "422":
+          description: Not ready; the error lists what's missing
 
   /land-parcels/{parcelID}/approvals/analyze:
     post:
@@ -1763,6 +2285,47 @@ components:
             $ref: "#/components/schemas/Error"
 
   schemas:
+    NearbyRegisteredTransactions:
+      type: object
+      required: [items, months, six_month_count, count, radius_km, match_basis, median_rate_per_acre, min_rate_per_acre, max_rate_per_acre, coverage]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/RegisteredTransaction" }
+        months: { type: integer, enum: [6, 12] }
+        six_month_count: { type: integer }
+        count: { type: integer }
+        radius_km: { type: number }
+        match_basis: { type: string, enum: [distance, village, unresolved] }
+        median_rate_per_acre: { type: [number, "null"] }
+        min_rate_per_acre: { type: [number, "null"] }
+        max_rate_per_acre: { type: [number, "null"] }
+        coverage:
+          type: [object, "null"]
+          required: [status, message, searched_at]
+          properties:
+            status: { type: string, enum: [searching, searched, partial, failed, access_required, location_required] }
+            message: { type: string }
+            searched_at: { type: [string, "null"], format: date-time }
+    RegisteredTransaction:
+      type: object
+      required: [id, registration_date, document_no, office_name, survey_no, property_type, area_acres, sale_price_rupees, government_value_rupees, location_method, distance_km, rate_per_acre, source, source_url, source_record_id]
+      properties:
+        id: { type: string, format: uuid }
+        registration_date: { type: string, format: date-time }
+        document_no: { type: string }
+        office_name: { type: string }
+        survey_no: { type: string }
+        property_type: { type: string, enum: [land, plot] }
+        area_acres: { type: number }
+        sale_price_rupees: { type: integer }
+        government_value_rupees: { type: [integer, "null"] }
+        location_method: { type: string }
+        distance_km: { type: [number, "null"] }
+        rate_per_acre: { type: number }
+        source: { type: string }
+        source_url: { type: string, format: uri }
+        source_record_id: { type: string, format: uuid }
     Error:
       type: object
       properties:
@@ -1848,6 +2411,17 @@ components:
           nullable: true
         notes:
           type: string
+        latitude:
+          type: number
+          nullable: true
+          description: Optional — where the parcel actually is, if pinned while adding it.
+        longitude:
+          type: number
+          nullable: true
+        location_source:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/LocationSource"
 
     LandParcel:
       type: object
@@ -1892,6 +2466,10 @@ components:
         village:
           type: string
           nullable: true
+        survey_number:
+          type: string
+          nullable: true
+          description: Survey/gat number with hissa as written on the 7/12, e.g. "45/2A"
         closed_price_rupees:
           type: integer
           format: int64
@@ -1911,6 +2489,38 @@ components:
         updated_at:
           type: string
           format: date-time
+        latitude:
+          type: number
+          nullable: true
+          description: Where the parcel actually is; null until pinned.
+        longitude:
+          type: number
+          nullable: true
+        location_source:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/LocationSource"
+        location_set_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    LocationSource:
+      type: string
+      enum: [pin, gps, maps_link, village, text]
+      description: How the parcel's coordinates were obtained, most to least precise.
+
+    PointGuess:
+      type: object
+      properties:
+        found:
+          type: boolean
+        latitude:
+          type: number
+          nullable: true
+        longitude:
+          type: number
+          nullable: true
 
     ListClosedTransactionsResponse:
       type: object
@@ -2004,6 +2614,89 @@ components:
         updated_at:
           type: string
           format: date-time
+        current_low_rupees:
+          type: integer
+          format: int64
+          nullable: true
+          description: Low end of today's value range (Assess only); current_valuation_rupees is the likely value
+        current_high_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        future_low_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        future_high_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        method:
+          type: string
+          enum: [manual, ai_assessed]
+        reasoning:
+          type: string
+        assessed_at:
+          type: string
+          format: date-time
+          nullable: true
+        basis:
+          nullable: true
+          description: What an Assess rested on (absent for a manual assessment)
+          allOf:
+            - $ref: "#/components/schemas/ValuationBasis"
+
+    ValuationBasis:
+      type: object
+      properties:
+        as_of:
+          type: string
+          format: date-time
+        location:
+          type: string
+        area_acres:
+          type: number
+        pinned:
+          type: boolean
+        ready_reckoner_per_acre:
+          type: integer
+          format: int64
+          nullable: true
+        ready_reckoner_year:
+          type: string
+        nearby_sales_count:
+          type: integer
+        nearby_sales_months:
+          type: integer
+        nearby_sales_median_per_acre:
+          type: number
+          nullable: true
+        infrastructure:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              kind:
+                type: string
+              category:
+                type: string
+              status:
+                type: string
+              completion:
+                type: string
+              distance_km:
+                type: number
+                nullable: true
+              planned:
+                type: boolean
+        asking_price_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        model:
+          type: string
 
     PlannedInfrastructureList:
       type: object
@@ -2138,7 +2831,7 @@ components:
 
     RiskLevel:
       type: string
-      enum: [low, medium, high]
+      enum: [not_checked, low, medium, high]
 
     OwnershipChainEntry:
       type: object
@@ -2176,6 +2869,67 @@ components:
         status:
           type: string
           enum: [pending, received]
+
+    RERAPromoterMatch:
+      type: object
+      required: [promoter_name, projects]
+      properties:
+        promoter_name:
+          type: string
+        projects:
+          type: integer
+
+    RERAProject:
+      type: object
+      required: [registration_number, project_name, has_extension]
+      properties:
+        registration_number:
+          type: string
+        project_name:
+          type: string
+        location:
+          type: string
+        district:
+          type: string
+        pincode:
+          type: string
+        last_modified:
+          type: string
+          format: date
+          nullable: true
+        has_extension:
+          type: boolean
+          description: MahaRERA lists an extension certificate (the promoter asked for more time)
+        details_url:
+          type: string
+
+    RERAPromoterHistory:
+      type: object
+      required: [promoter_name, projects, with_extension, projects_complete]
+      properties:
+        promoter_name:
+          type: string
+        projects:
+          type: array
+          items:
+            $ref: "#/components/schemas/RERAProject"
+        with_extension:
+          type: integer
+        projects_complete:
+          type: boolean
+          description: True once a statewide collection has finished, so the count is a total rather than "found so far"
+        complaints:
+          type: integer
+          nullable: true
+          description: Complaints on MahaRERA's promoter-wise list; null until the whole list has been collected
+        projects_as_of:
+          type: string
+          format: date
+          nullable: true
+        complaints_as_of:
+          type: string
+          format: date
+          nullable: true
 
     LegalCheckStatus:
       type: string
@@ -2368,6 +3122,463 @@ components:
         landowner_is_co_promoter:
           type: boolean
           nullable: true
+
+    ReportSummary:
+      type: object
+      required: [id, land_parcel_id, tier, status, open_items, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        land_parcel_id:
+          type: string
+          format: uuid
+        tier:
+          type: string
+          enum: [quick, full]
+        status:
+          type: string
+          enum: [draft, signed, issued]
+        open_items:
+          type: array
+          items:
+            type: string
+        verdict:
+          type: string
+        created_at:
+          type: string
+        finalised_at:
+          type: string
+
+    ReportDetail:
+      allOf:
+        - $ref: "#/components/schemas/ReportSummary"
+        - type: object
+          required: [sections]
+          properties:
+            sections:
+              $ref: "#/components/schemas/ReportSections"
+
+    ReportEdits:
+      type: object
+      properties:
+        occupancy_class:
+          type: string
+          enum: [unknown, class_1, class_2]
+        na_status:
+          type: string
+          enum: [unknown, na_granted, in_process, not_na, not_needed]
+        tenancy_remarks:
+          type: string
+        crz_forest_esz:
+          type: string
+        dp_zone:
+          type: string
+        dp_reservation:
+          type: string
+        base_fsi:
+          type: number
+          nullable: true
+        max_fsi:
+          type: number
+          nullable: true
+        planning_authority:
+          type: string
+          enum: ["", municipal_corporation, other, regional_plan_no_pa, mumbai, cidco_naina]
+        road_width_m:
+          type: number
+          nullable: true
+        development_note:
+          type: string
+        verdict:
+          type: string
+          enum: ["", go, fix_first, no_go]
+        verdict_summary:
+          type: string
+        fix_list:
+          type: array
+          items:
+            type: string
+
+    ReportRisk:
+      type: object
+      required: [area, level]
+      properties:
+        area:
+          type: string
+        level:
+          type: string
+        note:
+          type: string
+
+    ReportInfra:
+      type: object
+      required: [name, planned, category]
+      properties:
+        name:
+          type: string
+        planned:
+          type: boolean
+        status:
+          type: string
+        category:
+          type: string
+        distance_km:
+          type: number
+
+    SevenTwelveOwner:
+      type: object
+      required: [name, former]
+      properties:
+        name: { type: string }
+        area_hr: { type: string }
+        mutation_no: { type: string }
+        former: { type: boolean }
+
+    SevenTwelve:
+      type: object
+      required: [district, taluka, village, survey_number, tenure, total_area_hr, owners, other_rights, pending_mutations, is_na, digitally_signed]
+      properties:
+        district: { type: string }
+        taluka: { type: string }
+        village: { type: string }
+        survey_number: { type: string }
+        tenure:
+          type: string
+          enum: ["", class_1, class_2, govt_lease]
+        total_area_hr:
+          type: string
+          description: As written on the 7/12, hectare.are(.sqm), e.g. "1.23.45"
+        pot_kharaba: { type: string }
+        owners:
+          type: array
+          items: { $ref: "#/components/schemas/SevenTwelveOwner" }
+        tenants: { type: string }
+        other_rights:
+          type: array
+          items: { type: string }
+        pending_mutations:
+          type: array
+          items: { type: string }
+        last_mutation: { type: string }
+        is_na: { type: boolean }
+        digitally_signed: { type: boolean }
+        notes: { type: string }
+
+    SevenTwelveFlag:
+      type: object
+      required: [level, text]
+      properties:
+        level:
+          type: string
+          enum: [high, medium]
+        text: { type: string }
+
+    SevenTwelveDraft:
+      type: object
+      required: [data, flags, read_by]
+      properties:
+        data: { $ref: "#/components/schemas/SevenTwelve" }
+        flags:
+          type: array
+          items: { $ref: "#/components/schemas/SevenTwelveFlag" }
+        read_by: { type: string }
+
+    LandRecord:
+      type: object
+      required: [data, flags, confirmed_by, confirmed_at]
+      properties:
+        data: { $ref: "#/components/schemas/SevenTwelve" }
+        flags:
+          type: array
+          items: { $ref: "#/components/schemas/SevenTwelveFlag" }
+        read_by: { type: string }
+        confirmed_by: { type: string }
+        confirmed_at: { type: string }
+
+    ReportSevenTwelve:
+      type: object
+      required: [data, flags, confirmed_by, confirmed_at]
+      properties:
+        data: { $ref: "#/components/schemas/SevenTwelve" }
+        flags:
+          type: array
+          items: { $ref: "#/components/schemas/SevenTwelveFlag" }
+        area_acres: { type: number }
+        confirmed_by: { type: string }
+        confirmed_at: { type: string }
+
+    ReportFSI:
+      type: object
+      required: [basic, premium, tdr, max, max_with_ancillary, source]
+      properties:
+        basic:
+          type: number
+        premium:
+          type: number
+        tdr:
+          type: number
+        max:
+          type: number
+        max_with_ancillary:
+          type: number
+        source:
+          type: string
+
+    ReportRequirement:
+      type: object
+      description: Something the report doesn't have yet, where it comes from and who gets it.
+      required: [section, item, source, who, in_quick]
+      properties:
+        section:
+          type: string
+        item:
+          type: string
+        source:
+          type: string
+        who:
+          type: string
+          enum: [team, advocate, builder]
+        in_quick:
+          type: boolean
+
+    ReportSections:
+      type: object
+      required: [as_of, tier, parcel_name, location, legal_check_started, risks, title_chain, searches, documents, seller_projects, occupancy_class, na_status, infrastructure, valued, fix_list, requirements]
+      properties:
+        as_of:
+          type: string
+        tier:
+          type: string
+        parcel_name:
+          type: string
+        location:
+          type: string
+        village:
+          type: string
+        taluka:
+          type: string
+        district:
+          type: string
+        survey_number:
+          type: string
+        seven_twelve:
+          $ref: "#/components/schemas/ReportSevenTwelve"
+        area_acres:
+          type: number
+        asking_rupees:
+          type: integer
+          format: int64
+        latitude:
+          type: number
+        longitude:
+          type: number
+        legal_check_started:
+          type: boolean
+        legal_check_status:
+          type: string
+        risks:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReportRisk"
+        title_chain:
+          type: array
+          items:
+            $ref: "#/components/schemas/OwnershipChainEntry"
+        searches:
+          type: array
+          items:
+            $ref: "#/components/schemas/EncumbranceSearchItem"
+        search_summary:
+          type: string
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/LegalDocument"
+        seller_projects:
+          type: array
+          items:
+            $ref: "#/components/schemas/RERAHistoryEntry"
+        seller_summary:
+          type: string
+        occupancy_class:
+          type: string
+        na_status:
+          type: string
+        tenancy_remarks:
+          type: string
+        crz_forest_esz:
+          type: string
+        dp_zone:
+          type: string
+        dp_reservation:
+          type: string
+        planning_authority:
+          type: string
+        road_width_m:
+          type: number
+        fsi_band:
+          $ref: "#/components/schemas/ReportFSI"
+        fsi_note:
+          type: string
+        base_fsi:
+          type: number
+        max_fsi:
+          type: number
+        buildable_sqft:
+          type: integer
+          format: int64
+        development_note:
+          type: string
+        infrastructure:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReportInfra"
+        valued:
+          type: boolean
+        value_low_rupees:
+          type: integer
+          format: int64
+        value_likely_rupees:
+          type: integer
+          format: int64
+        value_high_rupees:
+          type: integer
+          format: int64
+        future_likely_rupees:
+          type: integer
+          format: int64
+        future_year:
+          type: integer
+        price_verdict:
+          type: string
+        value_indicative:
+          type: boolean
+          description: No registered sales or government rate behind the range; it doesn't judge the asking price.
+        value_basis:
+          type: string
+        verdict:
+          type: string
+        verdict_summary:
+          type: string
+        fix_list:
+          type: array
+          items:
+            type: string
+        verdict_source:
+          type: string
+        verdict_model:
+          type: string
+        advocate_name:
+          type: string
+        advocate_enrolment:
+          type: string
+        finalised_at:
+          type: string
+        requirements:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReportRequirement"
+
+    ParcelTenureInput:
+      type: object
+      required: [tenure_type]
+      properties:
+        tenure_type:
+          $ref: "#/components/schemas/TenureType"
+        purchase_price_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        purchase_stamp_duty_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        jda_model:
+          type: string
+          enum: ["", area_sharing, revenue_sharing, deposit_plus_share]
+        developer_area_share_pct:
+          type: number
+          nullable: true
+        landowner_revenue_share_pct:
+          type: number
+          nullable: true
+        cash_on_top_of_share:
+          type: boolean
+          nullable: true
+        security_deposit_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        deposit_refundable:
+          type: boolean
+          nullable: true
+        jda_stamp_duty_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        gst_reverse_charge_applicable:
+          type: boolean
+          nullable: true
+        landowner_is_co_promoter:
+          type: boolean
+          nullable: true
+
+    ParcelTenure:
+      type: object
+      required: [id, land_parcel_id, tenure_type]
+      properties:
+        id:
+          type: string
+          format: uuid
+        land_parcel_id:
+          type: string
+          format: uuid
+        tenure_type:
+          $ref: "#/components/schemas/TenureType"
+        purchase_price_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        purchase_stamp_duty_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        jda_model:
+          type: string
+          enum: ["", area_sharing, revenue_sharing, deposit_plus_share]
+        developer_area_share_pct:
+          type: number
+          nullable: true
+        landowner_revenue_share_pct:
+          type: number
+          nullable: true
+        cash_on_top_of_share:
+          type: boolean
+          nullable: true
+        security_deposit_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        deposit_refundable:
+          type: boolean
+          nullable: true
+        jda_stamp_duty_rupees:
+          type: integer
+          format: int64
+          nullable: true
+        gst_reverse_charge_applicable:
+          type: boolean
+          nullable: true
+        landowner_is_co_promoter:
+          type: boolean
+          nullable: true
+        landowner_area_share_pct:
+          type: number
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
 
     LandTenure:
       type: object

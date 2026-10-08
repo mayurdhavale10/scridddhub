@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -115,7 +116,30 @@ func (h *LegalCheckHandler) Upsert(w http.ResponseWriter, r *http.Request) {
 	}
 	actor := middleware.ActorFromContext(r.Context())
 	if err := h.usecase.Upsert(r.Context(), actor, check); err != nil {
+		if errors.Is(err, domain.ErrLegalCheckNotReady) {
+			writeError(w, http.StatusUnprocessableEntity, err)
+			return
+		}
 		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, toLegalCheckResponse(check))
+}
+
+// Start handles POST: returns the parcel's legal check, creating the standard checklist first
+// if the parcel has none.
+func (h *LegalCheckHandler) Start(w http.ResponseWriter, r *http.Request) {
+	landParcelID, err := uuid.Parse(r.PathValue("parcelID"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	actor := middleware.ActorFromContext(r.Context())
+	check, err := h.usecase.Start(r.Context(), actor, landParcelID)
+	if err != nil {
+		writeNotFoundOrError(w, err)
 		return
 	}
 

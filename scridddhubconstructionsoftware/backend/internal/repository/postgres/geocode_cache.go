@@ -19,13 +19,13 @@ func NewGeocodeCacheRepository(pool *pgxpool.Pool) *GeocodeCacheRepository {
 
 func (r *GeocodeCacheRepository) Get(ctx context.Context, query string) (*usecase.GeocodeResult, error) {
 	var (
-		res            usecase.GeocodeResult
-		lat, lng       *float64
-		display, match *string
+		res                       usecase.GeocodeResult
+		lat, lng                  *float64
+		display, match, placeType *string
 	)
 	err := r.pool.QueryRow(ctx, `
-		SELECT found, latitude, longitude, display_name, matched_query FROM geocode_cache WHERE query = $1
-	`, query).Scan(&res.Found, &lat, &lng, &display, &match)
+		SELECT found, latitude, longitude, display_name, matched_query, place_type FROM geocode_cache WHERE query = $1
+	`, query).Scan(&res.Found, &lat, &lng, &display, &match, &placeType)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -41,23 +41,26 @@ func (r *GeocodeCacheRepository) Get(ctx context.Context, query string) (*usecas
 	if match != nil {
 		res.MatchedQuery = *match
 	}
+	if placeType != nil {
+		res.PlaceType = *placeType
+	}
 	return &res, nil
 }
 
 func (r *GeocodeCacheRepository) Put(ctx context.Context, query string, res usecase.GeocodeResult, provider string) error {
 	var lat, lng *float64
-	var display, match *string
+	var display, match, placeType *string
 	if res.Found {
 		lat, lng = &res.Point.Latitude, &res.Point.Longitude
-		display, match = &res.DisplayName, &res.MatchedQuery
+		display, match, placeType = &res.DisplayName, &res.MatchedQuery, &res.PlaceType
 	}
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO geocode_cache (query, found, latitude, longitude, display_name, matched_query, provider)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO geocode_cache (query, found, latitude, longitude, display_name, matched_query, place_type, provider)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (query) DO UPDATE SET
 			found = EXCLUDED.found, latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude,
 			display_name = EXCLUDED.display_name, matched_query = EXCLUDED.matched_query,
-			provider = EXCLUDED.provider, fetched_at = now()
-	`, query, res.Found, lat, lng, display, match, provider)
+			place_type = EXCLUDED.place_type, provider = EXCLUDED.provider, fetched_at = now()
+	`, query, res.Found, lat, lng, display, match, placeType, provider)
 	return err
 }

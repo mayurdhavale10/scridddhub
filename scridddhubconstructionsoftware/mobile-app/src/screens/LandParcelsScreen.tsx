@@ -69,11 +69,8 @@ export function LandParcelsScreen({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Long-press a card to enter select mode; tapping normally still opens the parcel while not
-  // in select mode. A dedicated "Compare" bar appears once 2+ parcels are selected. "Select" in
-  // the header is a second, more reliable entry point — long-press-and-hold is finicky to
-  // reproduce with a mouse on an emulator (any jitter while held gets stolen by the list's own
-  // scroll gesture), so this guarantees a way in regardless of input device.
+  // "Select" in the header is the only way into select mode; tapping a card otherwise opens the
+  // parcel. A "Compare" bar appears once 2+ parcels are selected.
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -161,11 +158,10 @@ export function LandParcelsScreen({
       <View style={styles.headerRow}>
         <Text style={styles.title}>Land Parcels</Text>
         <View style={styles.headerActions}>
-          {selectMode ? null : (
-            <Pressable onPress={() => enterSelectMode()}>
-              <Text style={styles.auditLink}>Select</Text>
-            </Pressable>
-          )}
+          {/* Always visible: "Select" normally, "Cancel" while selecting (owner, 2026-10-03). */}
+          <Pressable onPress={selectMode ? cancelSelectMode : () => enterSelectMode()}>
+            <Text style={styles.auditLink}>{selectMode ? 'Cancel' : 'Select'}</Text>
+          </Pressable>
           <Pressable onPress={onSeeAuditTrail}>
             <Text style={styles.auditLink}>Audit Trail</Text>
           </Pressable>
@@ -231,18 +227,14 @@ export function LandParcelsScreen({
             const isSelected = selectedIds.has(item.id!);
             return (
             <Pressable
-              style={[
-                styles.card,
-                verdict && styles.cardRecommended,
-                isSelected && styles.cardSelected,
-              ]}
+              // No border highlight for parcels with a verdict: with black as the primary colour
+              // it read as "selected" (owner, 2026-10-03). The verdict line below says it.
+              style={[styles.card, isSelected && styles.cardSelected]}
+              // Tap opens the parcel. Selecting happens only after "Select" in the header: the old
+              // long-press shortcut fired on ordinary taps on a slow device (owner, 2026-10-03).
               onPress={() =>
                 selectMode ? toggleSelected(item.id!) : onSelectParcel(item.id!)
-              }
-              onLongPress={() =>
-                selectMode ? toggleSelected(item.id!) : enterSelectMode(item.id!)
-              }
-              delayLongPress={350}>
+              }>
               <View style={styles.cardHeader}>
                 <View style={styles.cardTitleRow}>
                   {selectMode ? (
@@ -409,10 +401,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 13,
     gap: 6,
-  },
-  cardRecommended: {
-    borderWidth: 2,
-    borderColor: colors.primary,
   },
   cardSelected: {
     backgroundColor: colors.surfaceContainer,

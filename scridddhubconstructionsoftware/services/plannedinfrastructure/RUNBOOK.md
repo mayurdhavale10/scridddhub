@@ -137,6 +137,8 @@ All from `backend/`.
 | List pending projects | `go run ./cmd/infra_review list` |
 | Check a project's points | `go run ./cmd/infra_review points "mmrda:metro line 4"` |
 | Remove a wrong point | `go run ./cmd/infra_review drop-point "<key>" "<label>"` |
+| Add a point the project's page names | `go run ./cmd/infra_review add-point "<key>" "<place as on page>" --by "You" [--place "<lookup name>"]` |
+| Fix a status the page states but extraction missed | `go run ./cmd/infra_review set-status "<key>" operational --source "<official url>" --quote "<exact sentence>" --by "You"` (locks the field) |
 | Approve / reject / undo | `go run ./cmd/infra_review approve\|reject\|reopen "<key>" --by "Your Name"` |
 | Run the scheduled job now | `powershell -ExecutionPolicy Bypass -File ..\scripts\run_infra_pipeline.ps1 -MaxDuration 30m` |
 

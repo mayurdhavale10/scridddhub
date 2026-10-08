@@ -8,3 +8,7 @@ Scridddhubhome/
 # OS
 .DS_Store
 Thumbs.db
+
+# Build logs and collection-run leftovers
+android_build.log
+*.failed

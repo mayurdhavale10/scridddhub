@@ -31,16 +31,16 @@ type stringListResponse struct {
 // Maharashtra village directory instead of just villages with a rate on file.
 
 type locationValueEstimateResponse struct {
-	District             string `json:"district"`
-	Taluka               string `json:"taluka"`
-	Village              string `json:"village"`
-	ZoneNo               string `json:"zone_no"`
-	RatePerSqmRupees     int64  `json:"rate_per_sqm_rupees"`
-	EffectiveYear        string `json:"effective_year"`
-	SourceURL            string `json:"source_url"`
-	VerifiedAt           string `json:"verified_at"`
+	District             string  `json:"district"`
+	Taluka               string  `json:"taluka"`
+	Village              string  `json:"village"`
+	ZoneNo               string  `json:"zone_no"`
+	RatePerSqmRupees     int64   `json:"rate_per_sqm_rupees"`
+	EffectiveYear        string  `json:"effective_year"`
+	SourceURL            string  `json:"source_url"`
+	VerifiedAt           string  `json:"verified_at"`
 	AreaSqm              float64 `json:"area_sqm"`
-	EstimatedValueRupees int64  `json:"estimated_value_rupees"`
+	EstimatedValueRupees int64   `json:"estimated_value_rupees"`
 }
 
 func toLocationValueEstimateResponse(e *domain.LocationValueEstimate) locationValueEstimateResponse {

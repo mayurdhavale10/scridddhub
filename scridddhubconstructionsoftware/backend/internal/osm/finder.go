@@ -25,8 +25,12 @@ type Fetcher interface {
 // one is fetched in the background.
 const refreshAfter = 30 * 24 * time.Hour
 
-// fetchTimeout bounds one background group fetch, independent of the request that started it.
-const fetchTimeout = 90 * time.Second
+// fetchTimeout bounds one background group fetch INCLUDING its wait for the Overpass slot,
+// independent of the request that started it. Each HTTP attempt has its own 40 s limit
+// (Overpass.client), so this only has to cover the queue: 2026-09-29, two new parcels queued 14
+// fetches behind one slot, and a 90 s limit that counted the queue expired them all at once —
+// every group came back empty.
+const fetchTimeout = 15 * time.Minute
 
 // Finder implements usecase.NearbyPlaceFinder: cached places for the property's ~1 km cell,
 // fetched from Overpass on first lookup.

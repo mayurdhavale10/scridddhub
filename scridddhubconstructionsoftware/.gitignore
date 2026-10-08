@@ -52,3 +52,6 @@ Thumbs.db
 # Scheduled pipeline run logs and build output
 logs/
 backend/bin/
+
+# Registration evidence, reviewed metadata, exports and file-store objects stay local.
+services/registeredtransactions/data/

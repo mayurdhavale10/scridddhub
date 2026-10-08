@@ -2,6 +2,12 @@
 
 ## Context
 
+2026-09-29 source update: E-DISPlay v2.1 explicitly accepts registration year as search text,
+with a required CAPTCHA. The known-property-only finding below is historical; current village
+enumeration remains unverified. See [the current investigation](../../services/registeredtransactions/README.md#current-source-investigation).
+Public registered comparables now have a separate storage/API feature; it does not expose private
+cross-org user-entered sales or change this ADR's training-data decision.
+
 The Estimate Value feature (ADR-0004) currently returns Maharashtra's Ready Reckoner Rate — a
 real, government-published number, but a legal *floor* for stamp duty, not a market estimate (see
 `services/estimatedparcelvalue/README.md`). Closing that gap for real means building something

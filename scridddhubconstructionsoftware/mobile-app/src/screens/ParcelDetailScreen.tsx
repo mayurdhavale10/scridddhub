@@ -19,6 +19,15 @@ type Props = {
   parcelId: string;
   onBack: () => void;
   onSeeLegalCheck: () => void;
+  onPinLocation: () => void;
+};
+
+const LOCATION_SOURCE_LABEL: Record<string, string> = {
+  pin: 'Pinned on the map',
+  gps: 'Pinned from GPS on site',
+  maps_link: 'Pinned from a Google Maps link',
+  village: 'Village centre (approximate)',
+  text: 'From the typed location (approximate)',
 };
 
 function formatCrore(rupees: number): string {
@@ -34,7 +43,10 @@ function formatDelta(current: number, asking: number): string {
 }
 
 // A "just checking a location" parcel (Screen 4.2) may have no recorded area and/or price.
-function formatSpecs(areaAcres: number | null | undefined, costRupees: number | null | undefined): string {
+function formatSpecs(
+  areaAcres: number | null | undefined,
+  costRupees: number | null | undefined,
+): string {
   const area = areaAcres != null ? `${areaAcres} acres` : 'area unknown';
   const cost = costRupees != null ? formatCrore(costRupees) : 'no price yet';
   return `${area} · ${cost}`;
@@ -54,6 +66,7 @@ export function ParcelDetailScreen({
   parcelId,
   onBack,
   onSeeLegalCheck,
+  onPinLocation,
 }: Props) {
   const [parcel, setParcel] = useState<LandParcel | null>(null);
   const [assessment, setAssessment] = useState<FeasibilityAssessment | null>(
@@ -63,7 +76,9 @@ export function ParcelDetailScreen({
   const [updatingStage, setUpdatingStage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
-  const [verifyResult, setVerifyResult] = useState<{ reachable: boolean } | null>(null);
+  const [verifyResult, setVerifyResult] = useState<{
+    reachable: boolean;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -151,6 +166,32 @@ export function ParcelDetailScreen({
         {parcel.fsi ? ` · FSI ${parcel.fsi}` : ''}
       </Text>
 
+      {/* Distances to everything nearby are only as good as this location
+          (docs/design/parcel-location-first-principles.md). */}
+      <View style={styles.section}>
+        <Text style={styles.sectionHeading}>Location on map</Text>
+        <View style={styles.card}>
+          <Text style={styles.cardLine}>{parcel.location}</Text>
+          <Text style={styles.cardLine}>
+            {parcel.latitude != null && parcel.longitude != null
+              ? `${
+                  LOCATION_SOURCE_LABEL[parcel.location_source ?? 'pin'] ??
+                  'Pinned'
+                } · ${parcel.latitude.toFixed(5)}, ${parcel.longitude.toFixed(
+                  5,
+                )}`
+              : 'Not pinned yet — nearby distances are measured from the area name, which can be off by a kilometre or two.'}
+          </Text>
+          <Pressable onPress={onPinLocation} style={styles.verifyButton}>
+            <Text style={styles.verifyButtonText}>
+              {parcel.latitude != null
+                ? 'Move the pin'
+                : 'Pin the exact location'}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+
       {parcel.source ? (
         <View style={styles.section}>
           <Text style={styles.sectionHeading}>Source</Text>
@@ -167,13 +208,19 @@ export function ParcelDetailScreen({
               <>
                 <Text style={styles.cardLine}>
                   {parcel.source_verified_at
-                    ? `✓ Verified ${formatVerifiedAt(parcel.source_verified_at)}`
+                    ? `✓ Verified ${formatVerifiedAt(
+                        parcel.source_verified_at,
+                      )}`
                     : 'Not verified yet'}
                 </Text>
                 <Pressable
                   onPress={verifySource}
                   disabled={verifying}
-                  style={[styles.verifyButton, verifying && styles.ctaButtonDisabled]}>
+                  style={[
+                    styles.verifyButton,
+                    verifying && styles.ctaButtonDisabled,
+                  ]}
+                >
                   {verifying ? (
                     <ActivityIndicator color={colors.primary} size="small" />
                   ) : (
@@ -184,7 +231,8 @@ export function ParcelDetailScreen({
                 </Pressable>
                 {verifyResult && !verifyResult.reachable ? (
                   <Text style={styles.verifyFailedText}>
-                    Could not reach this link just now — it may be down, or the URL may be wrong.
+                    Could not reach this link just now — it may be down, or the
+                    URL may be wrong.
                   </Text>
                 ) : null}
               </>
@@ -206,11 +254,26 @@ export function ParcelDetailScreen({
 
           <View style={styles.section}>
             <Text style={styles.sectionHeading}>Valuation</Text>
+            {assessment.verdict === 'Not enough market evidence to judge the asking price' ? (
+              // No registered sales or government rate: the model's range is only a guess, so it
+              // isn't shown (it was ~10x too low for Dhamni, Karjat). Matches domain.VerdictNoMarketEvidence.
+              <View style={styles.card}>
+                <Text style={styles.cardLine}>
+                  No registered sales or government ready-reckoner rate on record for this area yet, so
+                  we don’t put a value on it. Next: registered sale prices for the village (Index-II at
+                  the Sub-Registrar) and the ready-reckoner rate (IGR e-ASR).
+                </Text>
+              </View>
+            ) : (
             <View style={styles.card}>
               <Text style={styles.cardLine}>
-                AI current valuation: {formatCrore(assessment.current_valuation_rupees!)}
+                AI current valuation:{' '}
+                {formatCrore(assessment.current_valuation_rupees!)}
                 {parcel.cost_rupees != null
-                  ? ` ${formatDelta(assessment.current_valuation_rupees!, parcel.cost_rupees)}`
+                  ? ` ${formatDelta(
+                      assessment.current_valuation_rupees!,
+                      parcel.cost_rupees,
+                    )}`
                   : ' (no asking price recorded to compare against)'}
               </Text>
               <Text style={styles.cardLine}>
@@ -218,6 +281,7 @@ export function ParcelDetailScreen({
                 {formatCrore(assessment.future_valuation_rupees!)}
               </Text>
             </View>
+            )}
           </View>
 
           {assessment.infrastructure_note ? (
@@ -261,13 +325,14 @@ export function ParcelDetailScreen({
       <Pressable
         style={[styles.ctaButton, updatingStage && styles.ctaButtonDisabled]}
         disabled={updatingStage || parcel.stage === 'negotiating'}
-        onPress={moveToNegotiating}>
+        onPress={moveToNegotiating}
+      >
         <Text style={styles.ctaButtonText}>
           {parcel.stage === 'negotiating'
             ? 'Already negotiating'
             : updatingStage
-              ? 'Updating…'
-              : 'Move to Negotiating'}
+            ? 'Updating…'
+            : 'Move to Negotiating'}
         </Text>
       </Pressable>
     </ScrollView>

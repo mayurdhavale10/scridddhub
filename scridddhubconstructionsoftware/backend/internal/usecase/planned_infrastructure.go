@@ -32,6 +32,9 @@ type GeocodeResult struct {
 	Point        domain.GeoPoint
 	DisplayName  string
 	MatchedQuery string
+	// PlaceType is the geocoder's type for the match ("suburb", "village", "building", "road"...),
+	// "" when unknown. The locator rejects buildings and shops that merely share a name.
+	PlaceType string
 }
 
 // Geocoder is implemented by internal/geo (swap providers without touching this usecase).
@@ -112,7 +115,33 @@ func (u *PlannedInfrastructureUsecase) ForParcel(ctx context.Context, parcelID u
 	if err != nil {
 		return nil, err
 	}
-	return u.ForLocation(ctx, domain.PropertyLocation{Text: parcel.Location, District: parcel.District, Taluka: parcel.Taluka})
+	place := domain.PropertyLocation{Text: parcel.Location, District: parcel.District, Taluka: parcel.Taluka}
+	// A pinned parcel is measured from its pin: the person who added it knows where it is, and
+	// geocoding free text is only a guess (docs/design/parcel-location-first-principles.md).
+	if parcel.Latitude != nil && parcel.Longitude != nil {
+		source := "pin"
+		if parcel.LocationSource != nil {
+			source = *parcel.LocationSource
+		}
+		pinned := &GeocodeResult{
+			Found:        true,
+			Point:        domain.GeoPoint{Latitude: *parcel.Latitude, Longitude: *parcel.Longitude},
+			DisplayName:  parcel.Location,
+			MatchedQuery: "parcel " + source,
+		}
+		return u.forPoint(ctx, place, pinned)
+	}
+	return u.ForLocation(ctx, place)
+}
+
+// GuessLocation is the best guess for a free-text location — where a pin should start before
+// the user moves it onto the land. nil when nothing matched.
+func (u *PlannedInfrastructureUsecase) GuessLocation(ctx context.Context, text string) (*GeocodeResult, error) {
+	loc, err := u.resolve(ctx, text)
+	if err != nil || loc == nil || !loc.Found {
+		return nil, err
+	}
+	return loc, nil
 }
 
 // ForLocation answers "what's planned near here?" for any location — no parcel needs to exist.
@@ -121,6 +150,17 @@ func (u *PlannedInfrastructureUsecase) ForLocation(ctx context.Context, place do
 	if strings.TrimSpace(place.Text) == "" {
 		return nil, fmt.Errorf("location is required")
 	}
+	loc, err := u.resolve(ctx, place.Text)
+	if err != nil {
+		// A geocoder outage must not blank the whole section — degrade to taluka matching.
+		log.Printf("geocoding %q failed, falling back to taluka matching: %v", place.Text, err)
+		loc = nil
+	}
+	return u.forPoint(ctx, place, loc)
+}
+
+// forPoint matches everything near a resolved location (nil or not-found = taluka matching only).
+func (u *PlannedInfrastructureUsecase) forPoint(ctx context.Context, place domain.PropertyLocation, loc *GeocodeResult) (*PlannedInfrastructureResult, error) {
 	projects, err := u.projects.ListApproved(ctx)
 	if err != nil {
 		return nil, err
@@ -128,12 +168,6 @@ func (u *PlannedInfrastructureUsecase) ForLocation(ctx context.Context, place do
 
 	var at *domain.GeoPoint
 	var resolvedAddress string
-	loc, err := u.resolve(ctx, place.Text)
-	if err != nil {
-		// A geocoder outage must not blank the whole section — degrade to taluka matching.
-		log.Printf("geocoding %q failed, falling back to taluka matching: %v", place.Text, err)
-		loc = nil
-	}
 	if loc != nil && loc.Found {
 		at = &loc.Point
 		resolvedAddress = loc.DisplayName

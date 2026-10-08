@@ -21,7 +21,8 @@ func NewLandParcelRepository(pool *pgxpool.Pool) *LandParcelRepository {
 const landParcelSelectColumns = `
 	id, project_id, name, COALESCE(location, ''), area_acres, cost_rupees, fsi, source, source_url,
 	source_verified_at, district, taluka, village, closed_price_rupees, closed_at, stage,
-	COALESCE(notes, ''), created_at, updated_at
+	COALESCE(notes, ''), created_at, updated_at, latitude, longitude, location_source, location_set_at,
+	survey_number
 `
 
 func (r *LandParcelRepository) Create(ctx context.Context, actor string, parcel *domain.LandParcel) error {
@@ -32,11 +33,14 @@ func (r *LandParcelRepository) Create(ctx context.Context, actor string, parcel 
 	defer tx.Rollback(ctx)
 
 	row := tx.QueryRow(ctx, `
-		INSERT INTO land_parcels (project_id, name, location, area_acres, cost_rupees, fsi, source, source_url, district, taluka, village, stage, notes)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-		RETURNING id, created_at, updated_at
-	`, parcel.ProjectID, parcel.Name, parcel.Location, parcel.AreaAcres, parcel.CostRupees, parcel.FSI, parcel.Source, parcel.SourceURL, parcel.District, parcel.Taluka, parcel.Village, parcel.Stage, parcel.Notes)
-	if err := row.Scan(&parcel.ID, &parcel.CreatedAt, &parcel.UpdatedAt); err != nil {
+		INSERT INTO land_parcels (project_id, name, location, area_acres, cost_rupees, fsi, source, source_url, district, taluka, village, stage, notes,
+		                          latitude, longitude, location_source, location_set_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+		        CASE WHEN $14::double precision IS NULL THEN NULL ELSE now() END)
+		RETURNING id, created_at, updated_at, location_set_at
+	`, parcel.ProjectID, parcel.Name, parcel.Location, parcel.AreaAcres, parcel.CostRupees, parcel.FSI, parcel.Source, parcel.SourceURL, parcel.District, parcel.Taluka, parcel.Village, parcel.Stage, parcel.Notes,
+		parcel.Latitude, parcel.Longitude, parcel.LocationSource)
+	if err := row.Scan(&parcel.ID, &parcel.CreatedAt, &parcel.UpdatedAt, &parcel.LocationSetAt); err != nil {
 		return err
 	}
 
@@ -184,6 +188,78 @@ func (r *LandParcelRepository) RecordClosedPrice(ctx context.Context, actor stri
 	return &after, nil
 }
 
+// SetLocation records where the parcel actually is (a pin, GPS on site, or a Maps link). Audited
+// like every other parcel change; coordinates must already be validated by the caller.
+func (r *LandParcelRepository) SetLocation(ctx context.Context, actor string, id uuid.UUID, lat, lng float64, source string) (*domain.LandParcel, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	before, err := scanLandParcel(tx.QueryRow(ctx, `SELECT `+landParcelSelectColumns+` FROM land_parcels WHERE id = $1 FOR UPDATE`, id))
+	if err != nil {
+		return nil, err
+	}
+
+	after := *before
+	after.Latitude, after.Longitude, after.LocationSource = &lat, &lng, &source
+
+	row := tx.QueryRow(ctx, `
+		UPDATE land_parcels
+		SET latitude = $1, longitude = $2, location_source = $3, location_set_at = now(), updated_at = now()
+		WHERE id = $4
+		RETURNING updated_at, location_set_at
+	`, lat, lng, source, id)
+	if err := row.Scan(&after.UpdatedAt, &after.LocationSetAt); err != nil {
+		return nil, err
+	}
+
+	if err := writeAudit(ctx, tx, "land_parcels", id, "update", actor, before, &after); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return &after, nil
+}
+
+// SetLandRecord records how the parcel is identified in the land records: district, taluka,
+// village and survey/gat number. Audited; values must already be validated by the caller.
+func (r *LandParcelRepository) SetLandRecord(ctx context.Context, actor string, id uuid.UUID, district, taluka, village, surveyNumber string) (*domain.LandParcel, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	before, err := scanLandParcel(tx.QueryRow(ctx, `SELECT `+landParcelSelectColumns+` FROM land_parcels WHERE id = $1 FOR UPDATE`, id))
+	if err != nil {
+		return nil, err
+	}
+
+	after := *before
+	after.District, after.Taluka, after.Village, after.SurveyNumber = &district, &taluka, &village, &surveyNumber
+
+	row := tx.QueryRow(ctx, `
+		UPDATE land_parcels
+		SET district = $1, taluka = $2, village = $3, survey_number = $4, updated_at = now()
+		WHERE id = $5
+		RETURNING updated_at
+	`, district, taluka, village, surveyNumber, id)
+	if err := row.Scan(&after.UpdatedAt); err != nil {
+		return nil, err
+	}
+
+	if err := writeAudit(ctx, tx, "land_parcels", id, "update", actor, before, &after); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return &after, nil
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }
@@ -192,7 +268,8 @@ func scanLandParcel(row rowScanner) (*domain.LandParcel, error) {
 	var p domain.LandParcel
 	err := row.Scan(&p.ID, &p.ProjectID, &p.Name, &p.Location, &p.AreaAcres, &p.CostRupees, &p.FSI,
 		&p.Source, &p.SourceURL, &p.SourceVerifiedAt, &p.District, &p.Taluka, &p.Village,
-		&p.ClosedPriceRupees, &p.ClosedAt, &p.Stage, &p.Notes, &p.CreatedAt, &p.UpdatedAt)
+		&p.ClosedPriceRupees, &p.ClosedAt, &p.Stage, &p.Notes, &p.CreatedAt, &p.UpdatedAt,
+		&p.Latitude, &p.Longitude, &p.LocationSource, &p.LocationSetAt, &p.SurveyNumber)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, domain.ErrNotFound

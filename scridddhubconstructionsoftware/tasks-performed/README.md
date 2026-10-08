@@ -41,4 +41,5 @@ shared.
 |---|---|
 | 2026-09-26 → 28 | [Estimate Value, Compare Parcels, Planned Infrastructure end to end](2026-09-26-planned-infrastructure.md) |
 | 2026-09-28 | [More nearby-infrastructure layers](2026-09-28-session.md) |
-| 2026-09-29 | [Session in progress](2026-09-29-session.md) |
+| 2026-09-29 | [Scheduled run fixed, MSRDC/NHSRCL review, locator namesake fix](2026-09-29-session.md) |
+| 2026-10-01 | [Valuation Summary and Legal & RERA Check built; registered-transactions data plan parked](2026-10-01-session.md) |

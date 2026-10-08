@@ -65,6 +65,11 @@ func (l *Locator) Locate(ctx context.Context, vp infrapipeline.VerifiedProject, 
 stations:
 	for _, st := range places {
 		name := CleanStationName(st.Name)
+		// A road's name ("Eastern Express Highway") geocodes to an arbitrary spot along 20+ km, and
+		// a region's ("Mumbai", "Navi Mumbai") to its centroid — neither is a location.
+		if isRoadName(name) || isRegionName(name) {
+			continue
+		}
 		// Checked 2026-09-27: Nominatim rarely knows "X metro station" (under-construction stations
 		// aren't in OpenStreetMap at all) but does know the neighbourhood by name — "Asalpha,
 		// Mumbai" resolves to the Asalpha suburb. A suburb centre is typically within ~1 km of its
@@ -73,7 +78,8 @@ stations:
 		// spot inside Mumbai (2026-09-27). ", Mumbai" is only a fallback, and results must still
 		// fall inside the MMR box.
 		var r usecase.GeocodeResult
-		for _, query := range []string{name + ", Maharashtra", name + ", Mumbai, Maharashtra"} {
+		accepted := false
+		for i, query := range []string{name + ", Maharashtra", name + ", Mumbai, Maharashtra"} {
 			if l.Budget > 0 && l.used >= l.Budget {
 				firstErr = fmt.Errorf("geocoding budget of %d reached; remaining stations left unlocated", l.Budget)
 				break stations
@@ -86,11 +92,20 @@ stations:
 				}
 				continue stations
 			}
-			if r.Found && l.inBounds(r.Point) {
+			if !r.Found || !isSamePlace(name, r) {
+				continue // nothing, or a different thing that merely contains the name
+			}
+			if l.inBounds(r.Point) {
+				accepted = true
 				break
 			}
+			if i == 0 {
+				// Found state-wide but outside the region: the name means that place ("Amravati",
+				// "Karanja" in Washim). Retrying ", Mumbai" would only find a namesake building.
+				continue stations
+			}
 		}
-		if !r.Found || !l.inBounds(r.Point) {
+		if !accepted {
 			continue
 		}
 		found = append(found, infrapipeline.LocatedPoint{
@@ -117,6 +132,47 @@ func (l *Locator) lookup(ctx context.Context, query string) (usecase.GeocodeResu
 		_ = l.Cache.Put(ctx, key, r, l.Geocoder.Provider())
 	}
 	return r, nil
+}
+
+var (
+	roadName = regexp.MustCompile(`(?i)\b(highway|expressway|express\s+way|marg|road|bypass|link\s+road|corridor|sea\s*link|freeway)$`)
+	// Buildings and shops that share a name, and whole districts/states — "Thane, Maharashtra"
+	// matched Thane district, whose centre is ~25 km from Thane city (checked 2026-09-29).
+	nonPlace = map[string]bool{"building": true, "house": true, "amenity": true, "shop": true, "office": true,
+		"craft": true, "state_district": true, "state": true, "county": true, "region": true, "country": true}
+	// A building IS the place when the name says it's a facility ("Khalapur Toll Plaza" is mapped
+	// as a building); a bare name ("Sabarmati") matching a building is a namesake.
+	facilityWord = regexp.MustCompile(`(?i)\b(toll|plaza|station|terminus|terminal|depot|tunnel|interchange|port|airport|jetty|hospital|college)\b`)
+	regionName   = map[string]bool{"mumbai": true, "navi mumbai": true, "greater mumbai": true, "maharashtra": true,
+		"gujarat": true, "india": true, "mmr": true, "mumbai metropolitan region": true}
+	nonAlnum = regexp.MustCompile(`[^\pL\pN]+`)
+)
+
+func isRoadName(name string) bool { return roadName.MatchString(strings.TrimSpace(name)) }
+
+func isRegionName(name string) bool { return regionName[normName(name)] }
+
+func normName(s string) string {
+	return strings.TrimSpace(nonAlnum.ReplaceAllString(strings.ToLower(s), " "))
+}
+
+// isSamePlace reports whether a geocoder match is the place asked for, not something that merely
+// shares or contains its name. Found 2026-09-29: "Sabarmati" and "Anand" matched buildings of
+// those names in Mumbai; "Ahmedabad" matched "Mumbai–Ahmedabad high-speed rail"; "Vadodara"
+// matched "Mumbai - Vadodara Expressway"; "Kune" matched "Kune Flyover" near Lonavala.
+// So the match's own name (the first part of its address) must equal the name, and it must be a
+// place, not a building or shop.
+func isSamePlace(name string, r usecase.GeocodeResult) bool {
+	if nonPlace[r.PlaceType] && !(r.PlaceType == "building" && facilityWord.MatchString(name)) {
+		return false
+	}
+	first := r.DisplayName
+	if i := strings.Index(first, ","); i >= 0 {
+		first = first[:i]
+	}
+	// Spaces ignored: OpenStreetMap writes "Kanjur Marg" where pages write "Kanjurmarg".
+	squash := func(s string) string { return strings.ReplaceAll(normName(s), " ", "") }
+	return squash(first) == squash(name)
 }
 
 func (l *Locator) inBounds(p domain.GeoPoint) bool {

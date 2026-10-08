@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { api } from '../api/client';
 import { colors } from '../theme/colors';
+import { NearbyRegisteredTransactions } from '../components/NearbyRegisteredTransactions';
 import type { components } from '@scridddhub/api-client';
 
 type LandParcel = components['schemas']['LandParcel'];
@@ -35,7 +36,9 @@ function whereText(item: InfraItem): string {
   const p = item.nearest_point;
   if (item.match_basis === 'distance' && p && item.distance_km != null) {
     const place = p.kind === 'station' ? `${p.label} station` : p.label;
-    const approx = p.coord_source === 'approximate';
+    // Anything not from an official file is a geocoded place centre — including points a
+    // reviewer added (coord_source 'manual'), which are still looked up, not surveyed.
+    const approx = p.coord_source !== 'official_file';
     return `${approx ? 'About ' : ''}${item.distance_km} km from ${place}`;
   }
   return 'Serves this area';
@@ -226,8 +229,42 @@ type Props = {
 const COLUMN_WIDTH = 160;
 const LABEL_WIDTH = 108;
 
+// No registered sales or government rate behind the assessment: its range is a guess, so it's
+// neither shown nor ranked. Must match domain.VerdictNoMarketEvidence.
+function noEvidence(a: { verdict?: string | null }): boolean {
+  return a.verdict === 'Not enough market evidence to judge the asking price';
+}
+
 function formatCrore(rupees: number): string {
   return `₹${(rupees / 1e7).toFixed(1)} Cr`;
+}
+
+// "₹7.0–10.5 Cr" for an assessed range; a manual assessment has only one value.
+function formatRange(
+  low: number | null | undefined,
+  likely: number,
+  high: number | null | undefined,
+): string {
+  if (low == null || high == null) return formatCrore(likely);
+  return `₹${(low / 1e7).toFixed(1)}–${(high / 1e7).toFixed(1)} Cr`;
+}
+
+type ValuationBasis = components['schemas']['ValuationBasis'];
+
+// One line saying what an assessment rested on, so a number is never shown without its basis.
+function basisText(b: ValuationBasis): string {
+  const planned = (b.infrastructure ?? []).filter(i => i.planned).length;
+  const existing = (b.infrastructure ?? []).length - planned;
+  const parts = [
+    b.pinned ? 'pinned location' : 'typed location',
+    b.ready_reckoner_per_acre != null ? 'govt rate' : 'no govt rate',
+    b.nearby_sales_count
+      ? `${b.nearby_sales_count} nearby sales`
+      : 'no nearby sales yet',
+    `${planned} planned project${planned === 1 ? '' : 's'}`,
+    `${existing} nearby places`,
+  ];
+  return parts.join(' · ');
 }
 
 function formatDelta(current: number, asking: number): string {
@@ -241,7 +278,37 @@ function formatDelta(current: number, asking: number): string {
 export function ParcelComparisonScreen({ parcelIds, onBack }: Props) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [assessing, setAssessing] = useState<Record<string, boolean>>({});
+  const [assessError, setAssessError] = useState<Record<string, string>>({});
   const [infra, setInfra] = useState<Record<string, InfraState>>({});
+
+  // Valuation Summary "Assess": values the parcel from whatever is known about it and stores it
+  // as its assessment; the row updates in place.
+  const assess = async (parcelId: string) => {
+    setAssessing(prev => ({ ...prev, [parcelId]: true }));
+    setAssessError(prev => ({ ...prev, [parcelId]: '' }));
+    const { data, error: apiError } = await api.POST(
+      '/land-parcels/{parcelID}/valuation',
+      { params: { path: { parcelID: parcelId } } },
+    );
+    setAssessing(prev => ({ ...prev, [parcelId]: false }));
+    if (apiError || !data) {
+      setAssessError(prev => ({
+        ...prev,
+        [parcelId]:
+          (apiError as { error?: string } | undefined)?.error ??
+          'Could not assess — try again.',
+      }));
+      return;
+    }
+    setRows(prev =>
+      prev
+        ? prev.map(r =>
+            r.parcel.id === parcelId ? { ...r, assessment: data } : r,
+          )
+        : prev,
+    );
+  };
   // "<parcelId>:<category>" groups the user has expanded past the nearest few.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const toggleGroup = (key: string) =>
@@ -319,7 +386,7 @@ export function ParcelComparisonScreen({ parcelIds, onBack }: Props) {
   // The one parcel (if any) worth headlining as "the pick" among whichever were selected — the
   // one with a recorded verdict and the highest margin_pct. Never invented if nothing qualifies.
   const recommended = rows
-    .filter(r => r.assessment?.verdict)
+    .filter(r => r.assessment?.verdict && r.assessment.margin_pct != null && !noEvidence(r.assessment))
     .sort(
       (a, b) =>
         (b.assessment!.margin_pct ?? -Infinity) -
@@ -492,9 +559,7 @@ export function ParcelComparisonScreen({ parcelIds, onBack }: Props) {
                   <Text style={styles.noteCellName} numberOfLines={1}>
                     {r.parcel.name}
                   </Text>
-                  <Text style={styles.noteText}>
-                    {r.assessment?.comparable_sales_note ?? '—'}
-                  </Text>
+                  <NearbyRegisteredTransactions parcelID={r.parcel.id!} />
                 </View>
               ))}
             </View>
@@ -535,15 +600,27 @@ export function ParcelComparisonScreen({ parcelIds, onBack }: Props) {
 
               <View style={styles.row}>
                 <View style={styles.labelCell}>
-                  <Text style={styles.labelText}>AI current valuation</Text>
+                  <Text style={styles.labelText}>Value today</Text>
                 </View>
                 {rows.map(r => (
                   <View key={r.parcel.id} style={styles.valueCell}>
                     <Text style={styles.valueText}>
-                      {r.assessment
-                        ? formatCrore(r.assessment.current_valuation_rupees!)
+                      {r.assessment && noEvidence(r.assessment)
+                        ? 'No market data yet'
+                        : r.assessment
+                        ? formatRange(
+                            r.assessment.current_low_rupees,
+                            r.assessment.current_valuation_rupees!,
+                            r.assessment.current_high_rupees,
+                          )
                         : 'Not assessed'}
                     </Text>
+                    {r.assessment?.current_low_rupees != null && !noEvidence(r.assessment) ? (
+                      <Text style={styles.likelyText}>
+                        likely{' '}
+                        {formatCrore(r.assessment.current_valuation_rupees!)}
+                      </Text>
+                    ) : null}
                   </View>
                 ))}
               </View>
@@ -555,7 +632,9 @@ export function ParcelComparisonScreen({ parcelIds, onBack }: Props) {
                 {rows.map(r => (
                   <View key={r.parcel.id} style={styles.valueCell}>
                     <Text style={styles.valueText}>
-                      {r.assessment && r.parcel.cost_rupees != null
+                      {r.assessment && noEvidence(r.assessment)
+                        ? 'Not judged'
+                        : r.assessment && r.parcel.cost_rupees != null
                         ? formatDelta(
                             r.assessment.current_valuation_rupees!,
                             r.parcel.cost_rupees,
@@ -566,19 +645,75 @@ export function ParcelComparisonScreen({ parcelIds, onBack }: Props) {
                 ))}
               </View>
 
-              <View style={[styles.row, styles.lastRow]}>
+              <View style={styles.row}>
                 <View style={styles.labelCell}>
-                  <Text style={styles.labelText}>AI future valuation</Text>
+                  <Text style={styles.labelText}>
+                    Value in {new Date().getFullYear() + 5}
+                  </Text>
                 </View>
                 {rows.map(r => (
                   <View key={r.parcel.id} style={styles.valueCell}>
                     <Text style={styles.valueText}>
                       {r.assessment
-                        ? `${formatCrore(
+                        ? formatRange(
+                            r.assessment.future_low_rupees,
                             r.assessment.future_valuation_rupees!,
-                          )} (~${r.assessment.future_valuation_year})`
+                            r.assessment.future_high_rupees,
+                          )
                         : 'Not assessed'}
                     </Text>
+                    {r.assessment?.infrastructure_note ? (
+                      <Text style={styles.likelyText}>
+                        {r.assessment.infrastructure_note}
+                      </Text>
+                    ) : null}
+                  </View>
+                ))}
+              </View>
+
+              <View style={styles.row}>
+                <View style={styles.labelCell}>
+                  <Text style={styles.labelText}>Based on</Text>
+                </View>
+                {rows.map(r => (
+                  <View key={r.parcel.id} style={styles.valueCell}>
+                    <Text style={styles.basisText}>
+                      {r.assessment?.basis
+                        ? basisText(r.assessment.basis)
+                        : '—'}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Assess works for any saved parcel — known or not — from whatever is known
+                  about it (services/valuationsummary/README.md). One AI call per tap. */}
+              <View style={[styles.row, styles.lastRow]}>
+                <View style={styles.labelCell} />
+                {rows.map(r => (
+                  <View key={r.parcel.id} style={styles.valueCell}>
+                    <Pressable
+                      onPress={() => assess(r.parcel.id!)}
+                      disabled={assessing[r.parcel.id!] === true}
+                      style={[
+                        styles.assessButton,
+                        assessing[r.parcel.id!] === true &&
+                          styles.assessButtonBusy,
+                      ]}
+                    >
+                      <Text style={styles.assessButtonText}>
+                        {assessing[r.parcel.id!] === true
+                          ? 'Assessing…'
+                          : r.assessment
+                          ? 'Re-assess'
+                          : 'Assess'}
+                      </Text>
+                    </Pressable>
+                    {assessError[r.parcel.id!] ? (
+                      <Text style={styles.assessErrorText}>
+                        {assessError[r.parcel.id!]}
+                      </Text>
+                    ) : null}
                   </View>
                 ))}
               </View>
@@ -821,6 +956,30 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.onSurface,
   },
+  likelyText: {
+    fontSize: 12,
+    color: colors.onSurfaceVariant,
+    marginTop: 2,
+  },
+  basisText: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: colors.onSurfaceVariant,
+  },
+  assessButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primary,
+    borderRadius: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  assessButtonBusy: { opacity: 0.6 },
+  assessButtonText: {
+    color: colors.onPrimary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  assessErrorText: { fontSize: 12, color: colors.error, marginTop: 4 },
   summaryStrip: {
     borderTopWidth: 1,
     borderTopColor: colors.outlineVariant,

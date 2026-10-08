@@ -49,6 +49,9 @@ func main() {
 
 	projectRepo := postgres.NewProjectRepository(pool)
 	landParcelRepo := postgres.NewLandParcelRepository(pool)
+	registeredTransactionsUC := usecase.NewRegisteredTransactionsUsecase(
+		landParcelRepo, postgres.NewRegisteredTransactionRepository(pool), nil)
+	registeredTransactionsHandler := handler.NewRegisteredTransactionsHandler(registeredTransactionsUC)
 	feasibilityAssessmentRepo := postgres.NewFeasibilityAssessmentRepository(pool)
 	legalCheckRepo := postgres.NewLegalCheckRepository(pool)
 	governmentApprovalRepo := postgres.NewGovernmentApprovalRepository(pool)
@@ -128,8 +131,34 @@ func main() {
 		plannedInfrastructureUC.WithNearbyPlaces(osm.NewFinder(osm.NewOverpass(endpoints), postgres.NewOSMPlaceCache(pool), 12*time.Second))
 	}
 	plannedInfrastructureHandler := handler.NewPlannedInfrastructureHandler(plannedInfrastructureUC)
+	parcelLocationHandler := handler.NewParcelLocationHandler(plannedInfrastructureUC, geo.ResolveMapLink)
+	// Valuation Summary (services/valuationsummary/README.md): "Assess" values any saved parcel
+	// from what's known about it — Ready Reckoner rate, nearby infrastructure, nearby sales.
+	valuationHandler := handler.NewValuationHandler(usecase.NewValuationUsecase(
+		landParcelRepo, readyReckonerRateRepo, plannedInfrastructureUC, registeredTransactionsUC,
+		llm.NewGroqParcelValuer(groqAPIKey), feasibilityAssessmentRepo))
+
+	// Parcel Due-Diligence Report (services/duediligencereport/README.md): the paid report,
+	// composed from the parcel's existing data; the AI drafts the verdict, an advocate signs.
+	// A parcel's 7/12: the AI reads a photo into a draft, a person confirms it.
+	landRecordRepo := postgres.NewLandRecordRepository(pool)
+	landRecordHandler := handler.NewLandRecordHandler(usecase.NewLandRecordUsecase(
+		landRecordRepo, landParcelRepo, llm.NewGroqSevenTwelveReader(groqAPIKey)))
+
+	reportHandler := handler.NewDueDiligenceReportHandler(usecase.NewDueDiligenceReportUsecase(
+		postgres.NewDueDiligenceReportRepository(pool), landParcelRepo, legalCheckRepo,
+		feasibilityAssessmentRepo, plannedInfrastructureUC, llm.NewGroqReportVerdictDrafter(groqAPIKey), landRecordRepo))
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("POST /land-parcels/{id}/seven-twelve/read", landRecordHandler.Read)
+	mux.HandleFunc("PUT /land-parcels/{id}/seven-twelve", landRecordHandler.Confirm)
+	mux.HandleFunc("GET /land-parcels/{id}/seven-twelve", landRecordHandler.Get)
+	mux.HandleFunc("POST /land-parcels/{parcelID}/reports", reportHandler.Create)
+	mux.HandleFunc("GET /land-parcels/{parcelID}/reports", reportHandler.List)
+	mux.HandleFunc("GET /reports/{reportID}", reportHandler.Get)
+	mux.HandleFunc("PUT /reports/{reportID}", reportHandler.Update)
+	mux.HandleFunc("POST /reports/{reportID}/draft-verdict", reportHandler.DraftVerdict)
+	mux.HandleFunc("POST /reports/{reportID}/finalise", reportHandler.Finalise)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
@@ -170,18 +199,31 @@ func main() {
 	mux.HandleFunc("PATCH /land-parcels/{id}/stage", landParcelHandler.UpdateStage)
 	mux.HandleFunc("POST /land-parcels/{id}/verify-source", landParcelHandler.VerifySource)
 	mux.HandleFunc("POST /land-parcels/{id}/close", landParcelHandler.RecordClosedPrice)
+	// Where the parcel actually is — pin, GPS on site, or a pasted Maps link
+	// (docs/design/parcel-location-first-principles.md), plus the pin screen's two helpers.
+	mux.HandleFunc("PUT /land-parcels/{id}/location", landParcelHandler.SetLocation)
+	mux.HandleFunc("PUT /land-parcels/{id}/land-record", landParcelHandler.SetLandRecord)
+	mux.HandleFunc("GET /reference/location-guess", parcelLocationHandler.Guess)
+	mux.HandleFunc("GET /reference/map-link", parcelLocationHandler.MapLink)
 
 	mux.HandleFunc("PUT /land-parcels/{parcelID}/feasibility-assessment", feasibilityAssessmentHandler.Upsert)
 	mux.HandleFunc("GET /land-parcels/{parcelID}/feasibility-assessment", feasibilityAssessmentHandler.Get)
+	mux.HandleFunc("POST /land-parcels/{parcelID}/valuation", valuationHandler.Assess)
 
 	// Screen 5 "Planned Infrastructure": projects from the shared, manually verified reference list
 	// (migration 000028) that serve this parcel's taluka. Read-only.
 	mux.HandleFunc("GET /land-parcels/{parcelID}/planned-infrastructure", plannedInfrastructureHandler.ForParcel)
+	mux.HandleFunc("GET /land-parcels/{parcelID}/registered-transactions", registeredTransactionsHandler.ForParcel)
+	mux.HandleFunc("GET /reference/registered-transactions", registeredTransactionsHandler.ForLocation)
 	// Same lookup for any typed location, before a parcel exists (see services/plannedinfrastructure).
 	mux.HandleFunc("GET /reference/planned-infrastructure", plannedInfrastructureHandler.ForLocation)
 
+	mux.HandleFunc("POST /land-parcels/{parcelID}/legal-check", legalCheckHandler.Start)
 	mux.HandleFunc("PUT /land-parcels/{parcelID}/legal-check", legalCheckHandler.Upsert)
 	mux.HandleFunc("GET /land-parcels/{parcelID}/legal-check", legalCheckHandler.Get)
+	reraHandler := handler.NewRERAHandler(usecase.NewRERAUsecase(postgres.NewRERARepository(pool)))
+	mux.HandleFunc("GET /rera/promoters", reraHandler.SearchPromoters)
+	mux.HandleFunc("GET /rera/promoters/history", reraHandler.History)
 
 	mux.HandleFunc("POST /land-parcels/{parcelID}/approvals/analyze", governmentApprovalHandler.Analyze)
 	mux.HandleFunc("GET /land-parcels/{parcelID}/approvals", governmentApprovalHandler.List)
@@ -189,6 +231,9 @@ func main() {
 
 	mux.HandleFunc("PUT /projects/{projectID}/land-tenure", landTenureHandler.Upsert)
 	mux.HandleFunc("GET /projects/{projectID}/land-tenure", landTenureHandler.Get)
+	parcelTenureHandler := handler.NewParcelTenureHandler(usecase.NewParcelTenureUsecase(postgres.NewParcelTenureRepository(pool)))
+	mux.HandleFunc("GET /land-parcels/{parcelID}/tenure", parcelTenureHandler.Get)
+	mux.HandleFunc("PUT /land-parcels/{parcelID}/tenure", parcelTenureHandler.Upsert)
 
 	mux.HandleFunc("PUT /projects/{projectID}/financial-structure", financialStructureHandler.Upsert)
 	mux.HandleFunc("GET /projects/{projectID}/financial-structure", financialStructureHandler.Get)

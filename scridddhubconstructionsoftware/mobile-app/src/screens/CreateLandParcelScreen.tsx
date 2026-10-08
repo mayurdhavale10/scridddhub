@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,6 +13,56 @@ import {
 import { api } from '../api/client';
 import { colors } from '../theme/colors';
 import { DEV_PROJECT_ID } from '../config/devProject';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  LocationPicker,
+  type PinSource,
+  type Point,
+} from '../components/LocationPicker';
+
+type Pinned = { point: Point; source: PinSource };
+
+const PIN_SOURCE_LABEL: Record<PinSource, string> = {
+  pin: 'Pinned on the map',
+  gps: 'Pinned from GPS',
+  maps_link: 'Pinned from a Maps link',
+};
+
+// Under the Location field in both tabs: where the land actually is. Optional — someone who only
+// knows the area can still save — but every nearby distance (and Compare) is measured from here,
+// so it's offered right where the location is typed
+// (docs/design/parcel-location-first-principles.md).
+function PinField({
+  pinned,
+  onOpen,
+  onClear,
+}: {
+  pinned: Pinned | null;
+  onOpen: () => void;
+  onClear: () => void;
+}) {
+  if (!pinned) {
+    return (
+      <Pressable onPress={onOpen} style={styles.pinButton}>
+        <Text style={styles.pinButtonText}>Pin exact location on map</Text>
+      </Pressable>
+    );
+  }
+  return (
+    <View style={styles.pinnedRow}>
+      <Text style={styles.pinnedText}>
+        {PIN_SOURCE_LABEL[pinned.source]} · {pinned.point.lat.toFixed(5)},{' '}
+        {pinned.point.lng.toFixed(5)}
+      </Text>
+      <Pressable onPress={onOpen} hitSlop={8}>
+        <Text style={styles.pinnedAction}>Change</Text>
+      </Pressable>
+      <Pressable onPress={onClear} hitSlop={8}>
+        <Text style={styles.pinnedAction}>Remove</Text>
+      </Pressable>
+    </View>
+  );
+}
 
 type Props = {
   onBack: () => void;
@@ -105,7 +156,9 @@ function LocationSearchField({
           placeholderTextColor={colors.outline}
           autoCorrect={false}
         />
-        {loading ? <ActivityIndicator size="small" color={colors.onSurfaceVariant} /> : null}
+        {loading ? (
+          <ActivityIndicator size="small" color={colors.onSurfaceVariant} />
+        ) : null}
       </View>
       {picked ? (
         <Text style={styles.sourceCaption}>
@@ -121,15 +174,21 @@ function LocationSearchField({
                 setResults([]);
                 onPick(r);
               }}
-              style={styles.sourceOption}>
+              style={styles.sourceOption}
+            >
               <Text style={styles.sourceOptionText}>{r.village}</Text>
               <Text style={styles.sourceCaption}>
                 {r.taluka}, {r.district}
               </Text>
             </Pressable>
           ))}
-          <Pressable onPress={() => setResults([])} style={styles.sourceOptionDismiss}>
-            <Text style={styles.sourceOptionDismissText}>None of these — keep what I typed</Text>
+          <Pressable
+            onPress={() => setResults([])}
+            style={styles.sourceOptionDismiss}
+          >
+            <Text style={styles.sourceOptionDismissText}>
+              None of these — keep what I typed
+            </Text>
           </Pressable>
         </View>
       ) : null}
@@ -190,7 +249,8 @@ function SourceField({
                 onChange(opt);
                 setOpen(false);
               }}
-              style={styles.sourceOption}>
+              style={styles.sourceOption}
+            >
               <Text style={styles.sourceOptionText}>{opt}</Text>
             </Pressable>
           ))}
@@ -229,7 +289,9 @@ function SourceLinkField({
 export function CreateLandParcelScreen({ onBack, onCreated }: Props) {
   const [flow, setFlow] = useState<Flow>('priced');
 
-  // Free-text location — the same plain field in both flows.
+  // Location (typed text, picked village, pin), area and notes belong to the tab they were
+  // entered in: switching tabs never copies them across (owner, 2026-09-29). The other tab's
+  // values are kept in tabDrafts and restored when you switch back.
   const [location, setLocation] = useState('');
 
   // Flow A ("I have a price") only.
@@ -237,14 +299,13 @@ export function CreateLandParcelScreen({ onBack, onCreated }: Props) {
   const [costCr, setCostCr] = useState('');
   const [fsi, setFsi] = useState('');
 
-  // Shared across both flows.
   const [areaAcres, setAreaAcres] = useState('');
   const [source, setSource] = useState<string | null>(null);
   const [sourceUrl, setSourceUrl] = useState('');
   const [notes, setNotes] = useState('');
 
-  // Flow B ("Just checking a location") only. `picked` is set only when the user chose one of
-  // the real-village suggestions (case A); otherwise the typed location stands alone (case B).
+  // `picked` is set only when the user chose one of the real-village suggestions (case A);
+  // otherwise the typed location stands alone (case B). Both tabs offer the suggestions.
   const [picked, setPicked] = useState<VillageResult | null>(null);
   const [estimating, setEstimating] = useState(false);
   const [estimate, setEstimate] = useState<Estimate>(null);
@@ -254,8 +315,39 @@ export function CreateLandParcelScreen({ onBack, onCreated }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Where the land actually is.
+  const [pinned, setPinned] = useState<Pinned | null>(null);
+  const [pickingPin, setPickingPin] = useState(false);
+
+  type TabDraft = {
+    location: string;
+    picked: VillageResult | null;
+    pinned: Pinned | null;
+    areaAcres: string;
+    notes: string;
+  };
+  const emptyDraft: TabDraft = {
+    location: '',
+    picked: null,
+    pinned: null,
+    areaAcres: '',
+    notes: '',
+  };
+  const tabDrafts = useRef<Record<Flow, TabDraft>>({
+    priced: emptyDraft,
+    estimate: emptyDraft,
+  });
+
   const selectFlow = (next: Flow) => {
     if (next === flow) return;
+    tabDrafts.current[flow] = { location, picked, pinned, areaAcres, notes };
+    const restored = tabDrafts.current[next];
+    setLocation(restored.location);
+    setPicked(restored.picked);
+    setPinned(restored.pinned);
+    setAreaAcres(restored.areaAcres);
+    setNotes(restored.notes);
+    clearEstimates();
     setFlow(next);
     setSource(null); // the two flows use different source vocabularies
     setSourceUrl('');
@@ -280,13 +372,13 @@ export function CreateLandParcelScreen({ onBack, onCreated }: Props) {
     setAiEstimateError(null);
   };
 
-  const onFlowBLocationChange = (text: string) => {
+  const onLocationChange = (text: string) => {
     setLocation(text);
     setPicked(null); // editing the text un-links any previously picked village
     clearEstimates();
   };
 
-  const onFlowBPick = (match: VillageResult) => {
+  const onVillagePick = (match: VillageResult) => {
     setLocation(`${match.village}, ${match.taluka}, ${match.district}`);
     setPicked(match);
     clearEstimates();
@@ -319,7 +411,9 @@ export function CreateLandParcelScreen({ onBack, onCreated }: Props) {
             params: { query: { ...picked, area_acres: acres } },
           })
         : Promise.resolve(null),
-      api.GET('/land-parcels/estimate-value/ai', { params: { query: aiQuery } }),
+      api.GET('/land-parcels/estimate-value/ai', {
+        params: { query: aiQuery },
+      }),
     ]);
     if (seq !== requestSeqRef.current) return; // inputs changed while this was in flight
     setEstimating(false);
@@ -349,7 +443,10 @@ export function CreateLandParcelScreen({ onBack, onCreated }: Props) {
   const canSubmit =
     !submitting &&
     (flow === 'priced'
-      ? location.trim().length > 0 && name.trim().length > 0 && Number(areaAcres) > 0 && Number(costCr) > 0
+      ? location.trim().length > 0 &&
+        name.trim().length > 0 &&
+        Number(areaAcres) > 0 &&
+        Number(costCr) > 0
       : location.trim().length > 0);
 
   const submit = async () => {
@@ -363,18 +460,22 @@ export function CreateLandParcelScreen({ onBack, onCreated }: Props) {
         name: flow === 'priced' ? name.trim() : location.trim(),
         location: location.trim(),
         area_acres: areaAcres.trim() ? Number(areaAcres) : undefined,
-        cost_rupees: flow === 'priced' ? Math.round(Number(costCr) * 1e7) : undefined,
+        cost_rupees:
+          flow === 'priced' ? Math.round(Number(costCr) * 1e7) : undefined,
         fsi: flow === 'priced' && fsi.trim() ? Number(fsi) : undefined,
         source: source ?? undefined,
         source_url: sourceUrl.trim() || undefined,
-        // Structured location — only known for Flow B, and only when the user picked a real village
-        // suggestion. Kept alongside `location`, not instead of it, so a future closed price on this
-        // parcel can be pooled into the pricing dataset (docs/adr/0005) without needing to solve
+        // Structured location — only when the user picked a real village suggestion (either tab).
+        // Kept alongside `location`, not instead of it, so a future closed price on this parcel
+        // can be pooled into the pricing dataset (docs/adr/0005) without needing to solve
         // free-text location matching first.
-        district: flow === 'estimate' ? picked?.district : undefined,
-        taluka: flow === 'estimate' ? picked?.taluka : undefined,
-        village: flow === 'estimate' ? picked?.village : undefined,
+        district: picked?.district,
+        taluka: picked?.taluka,
+        village: picked?.village,
         notes: notes.trim() || undefined,
+        latitude: pinned?.point.lat,
+        longitude: pinned?.point.lng,
+        location_source: pinned?.source,
       },
     });
     setSubmitting(false);
@@ -387,6 +488,28 @@ export function CreateLandParcelScreen({ onBack, onCreated }: Props) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <Modal
+        visible={pickingPin}
+        animationType="slide"
+        onRequestClose={() => setPickingPin(false)}
+      >
+        {/* A Modal renders outside the app's SafeAreaView, so it needs its own — otherwise the
+            header draws under the status bar and "Back" collides with the clock. */}
+        <SafeAreaView style={styles.modalSafeArea} edges={['top', 'bottom']}>
+          <LocationPicker
+            title="Where is this land?"
+            startPoint={pinned?.point ?? null}
+            startText={location}
+            confirmLabel="Confirm this location"
+            onBack={() => setPickingPin(false)}
+            onConfirm={(point, pinSource) => {
+              setPinned({ point, source: pinSource });
+              setPickingPin(false);
+            }}
+          />
+        </SafeAreaView>
+      </Modal>
+
       <Pressable onPress={onBack} style={styles.backLink}>
         <Text style={styles.backLinkText}>← Back</Text>
       </Pressable>
@@ -396,15 +519,33 @@ export function CreateLandParcelScreen({ onBack, onCreated }: Props) {
       <View style={styles.toggle}>
         <Pressable
           onPress={() => selectFlow('priced')}
-          style={[styles.toggleTab, flow === 'priced' && styles.toggleTabActive]}>
-          <Text style={[styles.toggleTabText, flow === 'priced' && styles.toggleTabTextActive]}>
+          style={[
+            styles.toggleTab,
+            flow === 'priced' && styles.toggleTabActive,
+          ]}
+        >
+          <Text
+            style={[
+              styles.toggleTabText,
+              flow === 'priced' && styles.toggleTabTextActive,
+            ]}
+          >
             I have a price
           </Text>
         </Pressable>
         <Pressable
           onPress={() => selectFlow('estimate')}
-          style={[styles.toggleTab, flow === 'estimate' && styles.toggleTabActive]}>
-          <Text style={[styles.toggleTabText, flow === 'estimate' && styles.toggleTabTextActive]}>
+          style={[
+            styles.toggleTab,
+            flow === 'estimate' && styles.toggleTabActive,
+          ]}
+        >
+          <Text
+            style={[
+              styles.toggleTabText,
+              flow === 'estimate' && styles.toggleTabTextActive,
+            ]}
+          >
             Just checking a location
           </Text>
         </Pressable>
@@ -428,16 +569,18 @@ export function CreateLandParcelScreen({ onBack, onCreated }: Props) {
             />
           </View>
 
-          <View style={styles.field}>
-            <Text style={styles.label}>Location</Text>
-            <TextInput
-              style={styles.input}
-              value={location}
-              onChangeText={setLocation}
-              placeholder="area, city"
-              placeholderTextColor={colors.outline}
-            />
-          </View>
+          {/* Same village suggestions as "Just checking a location" (owner, 2026-09-29). */}
+          <LocationSearchField
+            value={location}
+            picked={picked}
+            onChangeText={onLocationChange}
+            onPick={onVillagePick}
+          />
+          <PinField
+            pinned={pinned}
+            onOpen={() => setPickingPin(true)}
+            onClear={() => setPinned(null)}
+          />
 
           <View style={styles.row}>
             <View style={[styles.field, styles.rowItem]}>
@@ -464,7 +607,11 @@ export function CreateLandParcelScreen({ onBack, onCreated }: Props) {
             </View>
           </View>
 
-          <SourceField value={source} options={SOURCE_OPTIONS_PRICED} onChange={selectSource} />
+          <SourceField
+            value={source}
+            options={SOURCE_OPTIONS_PRICED}
+            onChange={selectSource}
+          />
           {source && SOURCE_OPTIONS_WITH_LINK.has(source) ? (
             <SourceLinkField value={sourceUrl} onChange={setSourceUrl} />
           ) : null}
@@ -494,8 +641,9 @@ export function CreateLandParcelScreen({ onBack, onCreated }: Props) {
           </View>
 
           <Text style={styles.stageCaption}>
-            new parcels always start at stage <Text style={styles.stageCaptionBold}>'Sourced'</Text> — no
-            stage picker needed here
+            new parcels always start at stage{' '}
+            <Text style={styles.stageCaptionBold}>'Sourced'</Text> — no stage
+            picker needed here
           </Text>
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -503,7 +651,11 @@ export function CreateLandParcelScreen({ onBack, onCreated }: Props) {
           <Pressable
             onPress={submit}
             disabled={!canSubmit}
-            style={[styles.submitButton, !canSubmit && styles.submitButtonDisabled]}>
+            style={[
+              styles.submitButton,
+              !canSubmit && styles.submitButtonDisabled,
+            ]}
+          >
             {submitting ? (
               <ActivityIndicator color={colors.onPrimary} />
             ) : (
@@ -516,8 +668,13 @@ export function CreateLandParcelScreen({ onBack, onCreated }: Props) {
           <LocationSearchField
             value={location}
             picked={picked}
-            onChangeText={onFlowBLocationChange}
-            onPick={onFlowBPick}
+            onChangeText={onLocationChange}
+            onPick={onVillagePick}
+          />
+          <PinField
+            pinned={pinned}
+            onOpen={() => setPickingPin(true)}
+            onClear={() => setPinned(null)}
           />
 
           <View style={styles.field}>
@@ -535,7 +692,11 @@ export function CreateLandParcelScreen({ onBack, onCreated }: Props) {
             />
           </View>
 
-          <SourceField value={source} options={SOURCE_OPTIONS_ESTIMATE} onChange={selectSource} />
+          <SourceField
+            value={source}
+            options={SOURCE_OPTIONS_ESTIMATE}
+            onChange={selectSource}
+          />
           {source && SOURCE_OPTIONS_WITH_LINK.has(source) ? (
             <SourceLinkField value={sourceUrl} onChange={setSourceUrl} />
           ) : null}
@@ -557,12 +718,15 @@ export function CreateLandParcelScreen({ onBack, onCreated }: Props) {
 
           <Pressable
             onPress={estimateValue}
-            disabled={!location.trim() || !(Number(areaAcres) > 0) || estimating}
+            disabled={
+              !location.trim() || !(Number(areaAcres) > 0) || estimating
+            }
             style={[
               styles.submitButton,
               (!location.trim() || !(Number(areaAcres) > 0) || estimating) &&
                 styles.submitButtonDisabled,
-            ]}>
+            ]}
+          >
             {estimating ? (
               <ActivityIndicator color={colors.onPrimary} />
             ) : (
@@ -575,23 +739,31 @@ export function CreateLandParcelScreen({ onBack, onCreated }: Props) {
               <Text style={styles.estimateCardHeading}>
                 Government floor value (stamp-duty basis)
               </Text>
-              <Text style={styles.estimateCardRange}>₹{estimate.estimatedValueCr.toFixed(2)} Cr</Text>
-              <Text style={[styles.estimateCardText, styles.estimateCardWarning]}>
-                this is the legal minimum used for stamp duty, not a market estimate — real asking
-                prices in developing areas are often several times higher.
+              <Text style={styles.estimateCardRange}>
+                ₹{estimate.estimatedValueCr.toFixed(2)} Cr
+              </Text>
+              <Text
+                style={[styles.estimateCardText, styles.estimateCardWarning]}
+              >
+                this is the legal minimum used for stamp duty, not a market
+                estimate — real asking prices in developing areas are often
+                several times higher.
               </Text>
               <View style={styles.estimateDivider} />
               <Text style={styles.estimateCardText}>
-                ₹{estimate.ratePerSqm.toLocaleString('en-IN')}/m² — Maharashtra Ready Reckoner
-                Rate, {estimate.effectiveYear}, verified{' '}
+                ₹{estimate.ratePerSqm.toLocaleString('en-IN')}/m² — Maharashtra
+                Ready Reckoner Rate, {estimate.effectiveYear}, verified{' '}
                 {new Date(estimate.verifiedAt).toLocaleDateString()}
               </Text>
               <Pressable onPress={() => Linking.openURL(estimate.sourceUrl)}>
-                <Text style={styles.estimateSourceLink}>View source (e-ASR portal) →</Text>
+                <Text style={styles.estimateSourceLink}>
+                  View source (e-ASR portal) →
+                </Text>
               </Pressable>
               <Text style={styles.estimateCardText}>
-                a standalone valuation from this location's own government-published rate — not a
-                comparison against any other parcel in this app.
+                a standalone valuation from this location's own
+                government-published rate — not a comparison against any other
+                parcel in this app.
               </Text>
             </View>
           ) : null}
@@ -602,9 +774,13 @@ export function CreateLandParcelScreen({ onBack, onCreated }: Props) {
               <Text style={styles.estimateCardRange}>
                 ₹{aiEstimate.estimatedTotalValueCr.toFixed(2)} Cr
               </Text>
-              <Text style={styles.estimateCardText}>Not based on real market data.</Text>
+              <Text style={styles.estimateCardText}>
+                Not based on real market data.
+              </Text>
               <View style={styles.estimateDivider} />
-              <Text style={styles.estimateCardText}>{aiEstimate.reasoning}</Text>
+              <Text style={styles.estimateCardText}>
+                {aiEstimate.reasoning}
+              </Text>
               <Text style={styles.estimateCardText}>
                 ₹{aiEstimate.estimatedRatePerAcre.toLocaleString('en-IN')}/acre
               </Text>
@@ -622,7 +798,11 @@ export function CreateLandParcelScreen({ onBack, onCreated }: Props) {
           <Pressable
             onPress={submit}
             disabled={!canSubmit}
-            style={[styles.saveOutlineButton, !canSubmit && styles.submitButtonDisabled]}>
+            style={[
+              styles.saveOutlineButton,
+              !canSubmit && styles.submitButtonDisabled,
+            ]}
+          >
             {submitting ? (
               <ActivityIndicator color={colors.primary} />
             ) : (
@@ -630,8 +810,8 @@ export function CreateLandParcelScreen({ onBack, onCreated }: Props) {
             )}
           </Pressable>
           <Text style={styles.stageCaption}>
-            saves at stage 'Sourced', no price recorded — the estimate shown above isn't stored as
-            an asking price
+            saves at stage 'Sourced', no price recorded — the estimate shown
+            above isn't stored as an asking price
           </Text>
         </>
       )}
@@ -777,6 +957,31 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.onSurfaceVariant,
     textAlign: 'center',
+  },
+  modalSafeArea: { flex: 1, backgroundColor: colors.background },
+  pinButton: {
+    alignSelf: 'flex-start',
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginTop: 6,
+  },
+  pinButtonText: { fontSize: 13, fontWeight: '700', color: colors.primary },
+  pinnedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginTop: 6,
+  },
+  pinnedText: { fontSize: 13, color: colors.onSurface, fontWeight: '600' },
+  pinnedAction: {
+    fontSize: 13,
+    color: colors.primary,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
   },
   locationSearchInput: {
     flex: 1,

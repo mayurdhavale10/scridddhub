@@ -20,6 +20,18 @@ type FeasibilityAssessment struct {
 	ComparableSalesNote    string
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
+
+	// Set by Assess (Valuation Summary); nil/empty for a manually entered assessment.
+	// CurrentValuationRupees / FutureValuationRupees hold the "likely" value of each range.
+	CurrentLowRupees  *int64
+	CurrentHighRupees *int64
+	FutureLowRupees   *int64
+	FutureHighRupees  *int64
+	Method            string // manual | ai_assessed
+	Basis             ValuationBasis
+	Reasoning         string
+	Model             string
+	AssessedAt        *time.Time
 }
 
 func (a *FeasibilityAssessment) Validate() error {

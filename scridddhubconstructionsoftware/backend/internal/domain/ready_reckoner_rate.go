@@ -48,6 +48,9 @@ func (r *ReadyReckonerRate) Validate() error {
 // sqmPerAcre is the exact conversion factor (1 acre = 4046.8564224 m²).
 const sqmPerAcre = 4046.8564224
 
+// SqmPerAcre is sqmPerAcre for other packages (Valuation Summary converts the per-m² rate).
+const SqmPerAcre = sqmPerAcre
+
 // LocationValueEstimate is the result of the Estimate Value feature — a standalone valuation
 // grounded in one location's own government-published rate, never a comparison against other
 // parcels in this app (see docs/adr/0004). Deliberately does NOT apply an FSI multiplier: the

@@ -20,7 +20,7 @@ func (f *fakeGeo) Search(_ context.Context, q string) (usecase.GeocodeResult, er
 	f.calls++
 	for name, p := range f.points {
 		if strings.HasPrefix(q, name+",") {
-			return usecase.GeocodeResult{Found: true, Point: p}, nil
+			return usecase.GeocodeResult{Found: true, Point: p, DisplayName: name + ", Maharashtra, India", PlaceType: "suburb"}, nil
 		}
 	}
 	return usecase.GeocodeResult{}, nil
@@ -124,7 +124,67 @@ func (f *fallbackGeo) Provider() string { return "fake" }
 func (f *fallbackGeo) Search(_ context.Context, q string) (usecase.GeocodeResult, error) {
 	f.queries = append(f.queries, q)
 	if q == "Asalpha, Mumbai, Maharashtra" {
-		return usecase.GeocodeResult{Found: true, Point: domain.GeoPoint{Latitude: 19.06, Longitude: 73.12}}, nil
+		return usecase.GeocodeResult{Found: true, Point: domain.GeoPoint{Latitude: 19.06, Longitude: 73.12},
+			DisplayName: "Asalpha, Ghatkopar West, Mumbai", PlaceType: "suburb"}, nil
 	}
 	return usecase.GeocodeResult{}, nil
+}
+
+// scriptedGeo answers each query with a fixed result — the real Nominatim answers seen
+// 2026-09-29 for names that ended up as wrong points.
+type scriptedGeo struct {
+	answers map[string]usecase.GeocodeResult
+	queries []string
+}
+
+func (s *scriptedGeo) Provider() string { return "fake" }
+func (s *scriptedGeo) Search(_ context.Context, q string) (usecase.GeocodeResult, error) {
+	s.queries = append(s.queries, q)
+	return s.answers[q], nil
+}
+
+func found(lat, lng float64, display, placeType string) usecase.GeocodeResult {
+	return usecase.GeocodeResult{Found: true, Point: domain.GeoPoint{Latitude: lat, Longitude: lng}, DisplayName: display, PlaceType: placeType}
+}
+
+func TestLocate_RejectsNamesakesAndRegions(t *testing.T) {
+	g := &scriptedGeo{answers: map[string]usecase.GeocodeResult{
+		// Gujarat station: a building of the same name in Anushakti Nagar.
+		"Sabarmati, Maharashtra": found(19.0398, 72.9169, "Sabarmati, Dr. A P J Abdul Kalam Road, Anushakti Nagar, Mumbai", "building"),
+		// Gujarat city: the rail line that contains its name.
+		"Ahmedabad, Maharashtra": found(19.0991, 72.9557, "Mumbai–Ahmedabad high-speed rail (under construction), N Ward, Mumbai", "railway"),
+		// Found state-wide far away — must not then be retried in Mumbai.
+		"Amravati, Maharashtra":         found(21.1545, 77.6443, "Amravati, Maharashtra, India", "city"),
+		"Amravati, Mumbai, Maharashtra": found(19.0464, 72.8626, "Ashirwad Nursing Home, Amravati, Sant Rohidas Marg, Mumbai", "amenity"),
+		// A flyover whose name contains the village's.
+		"Kune, Maharashtra": found(18.7659, 73.3883, "Kune Flyover, Summer Hill, Lonavala, Pune", "road"),
+		// A whole district: its centre is ~25 km from Thane city.
+		"Thane, Maharashtra": found(19.3654, 73.3685, "Thane, Maharashtra, India", "state_district"),
+		// A facility mapped as a building is still the place when its name says so.
+		"Khalapur Toll Plaza, Maharashtra": found(18.8010, 73.2852, "Khalapur Toll Plaza, Mumbai - Pune Expressway, Savroli", "building"),
+		// Real places, accepted.
+		"Bandra Kurla Complex, Maharashtra": found(19.0607, 72.8547, "Bandra Kurla Complex, Bandra East, Mumbai", "suburb"),
+		"Virar, Maharashtra":                found(19.4498, 72.8121, "Virar, Vasai-Virar, Palghar, Maharashtra", "town"),
+		"Kanjurmarg, Maharashtra":           found(19.1290, 72.9280, "Kanjur Marg, S Ward, Mumbai", "suburb"),
+	}}
+	vp := project("Sabarmati", "Ahmedabad", "Amravati", "Kune", "Thane", "Khalapur Toll Plaza",
+		"Bandra Kurla Complex", "Virar", "Kanjurmarg", "Eastern Express Highway", "Mumbai")
+	l := New(g, nil)
+	l.MaxGapKm = 100 // this test is about matching, not the isolation check
+	pts, _ := l.Locate(context.Background(), vp, nil)
+	got := map[string]bool{}
+	for _, p := range pts {
+		got[p.Label] = true
+	}
+	if len(pts) != 4 || !got["Bandra Kurla Complex"] || !got["Virar"] || !got["Khalapur Toll Plaza"] || !got["Kanjurmarg"] {
+		t.Errorf("want only BKC, Virar, Khalapur Toll Plaza and Kanjurmarg, got %+v", pts)
+	}
+	for _, q := range g.queries {
+		switch q {
+		case "Amravati, Mumbai, Maharashtra":
+			t.Error("a name found outside the region must not be retried in Mumbai")
+		case "Eastern Express Highway, Maharashtra", "Mumbai, Maharashtra":
+			t.Errorf("road and region names must not be geocoded (%q)", q)
+		}
+	}
 }

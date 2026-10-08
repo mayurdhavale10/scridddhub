@@ -241,8 +241,14 @@ sourceLoop:
 		c := cands[key]
 		// A project with no stations, localities or coordinates can't answer "what's near this
 		// property?" — e.g. MMRDA's MUTP-II page lists programme items like "EMU Procurement".
-		// Record it instead of storing an unlocatable row.
-		if len(c.official) == 0 && len(c.vp.Project.Stations) == 0 && len(c.vp.Project.Localities) == 0 {
+		// Record it instead of storing an unlocatable row — unless its own title names the place
+		// ("Flyovers at Barfiwala Lane Junction, Andheri"); see PlaceFromName.
+		noLocation := len(c.official) == 0 && len(c.vp.Project.Stations) == 0 && len(c.vp.Project.Localities) == 0
+		if noLocation && addPlaceFromName(&c.vp) {
+			p.logf("place    %s — taken from its title: %q", key, c.vp.Project.Localities[0].Name)
+			noLocation = false
+		}
+		if noLocation {
 			res.Skipped = append(res.Skipped, key+": no location on the page (no stations, localities or coordinates)")
 			continue
 		}
