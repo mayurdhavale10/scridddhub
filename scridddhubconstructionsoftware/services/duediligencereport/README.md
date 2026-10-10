@@ -195,6 +195,66 @@ flowchart LR
   S --> REP["Report: section D filled,<br/>'From the 7/12' block,<br/>7/12 item cleared"]
 ```
 
+## Added 2026-10-10
+
+### 5. PDF of the report
+`GET /reports/{id}/pdf` (or `?format=html` to preview) renders an A4 document:
+- verdict first;
+- a DRAFT watermark and the "still to collect" table on drafts;
+- every section with its source;
+- the scope note and the advocate's sign-off.
+
+It uses headless Chrome (`internal/reportpdf`) because Chrome shapes Marathi text correctly; the
+pure-Go PDF libraries don't.
+- **On a Linux server:** install Chromium and Noto Sans Devanagari, or set `CHROME_PATH`.
+- **In the app:** "Download PDF" opens it in the phone's browser, which can save and share it.
+
+### 6. Eco-sensitive zone check (D)
+Notifications and their village lists are typed from the gazette into `esz_villages` (migration
+050).
+- **Loaded so far:** Matheran ESZ, S.O. 133(E), 4 Feb 2003, 89 villages.
+- **Matching is by district + taluka + village** (`domain.CheckESZ`):
+  - The list has "Dhamani" in Panvel, but Dhamni in Karjat is a different village, so matching by
+    name alone would wrongly flag it.
+  - Common spelling differences fold together (w/v, Tarf/T.).
+  - Ulhasnagar tehsil of 2003 is treated as today's Ambernath.
+  - A near spelling is flagged for a person to confirm.
+- **The report names which notifications were checked.** It never says "outside all ESZs".
+- **Still to load:** SGNP (S.O. 3645(E), 2016), Tungareshwar, Thane Creek, Karnala, Bhimashankar
+  (draft), Western Ghats ESA (7th draft).
+
+### 7. Registered sales typed from Index-II (G)
+`POST /registered-transactions` records one sale (the app's "Registered sales" screen).
+- **Reviewer:** the person entering it. A non-comparable sale needs a reason.
+- **Evidence:** the raw entry is archived as the sale's evidence record.
+- **Matching:** a pinned parcel now also sees **same-village** sales that have no coordinates.
+  Index-II gives village and survey number, not a map pin.
+- **Valuation:** with 3 or more comparable sales it has real evidence and judges the asking price.
+
+### 8. Mutation register (Ferfar) reader, the title chain (B)
+Same pattern as the 7/12: photos → draft → a person checks every entry → saved (migration 051,
+`land_mutations`). Pages are added one at a time into one draft.
+
+**The entry type is decided by rules** from the words written in the entry
+(`domain.ClassifyMutationText`: खरेदी, वारस, बक्षीस, वाटप, बोजा, बोजा कमी…). The AI's own guess
+isn't used.
+- **Why:** on a SAMPLE page the AI called a sale (खरेदी) a "charge released" and a gift a
+  "partition". The first would have hidden an unpaid bank loan.
+- **After the fix:** all four sample entries were typed correctly; one name was still misspelled.
+
+**Flags (rules):**
+- years covered against the 30 a title search needs;
+- a bank charge with no later release;
+- pending or rejected entries;
+- inheritance (check all heirs);
+- court orders and acquisition;
+- a seller who never received the land in an earlier entry.
+
+**In the report:** confirmed entries become section B, clear the Ferfar item, and add "older
+records to complete 30 years" when the register is shorter.
+
+**Accuracy on real registers is untested**, and handwritten older entries will be harder.
+
 ## Life of a report
 
 ```mermaid

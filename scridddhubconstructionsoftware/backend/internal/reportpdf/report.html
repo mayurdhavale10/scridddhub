@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Parcel Due-Diligence Report · {{.Sections.ParcelName}}</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm 18mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", "Noto Sans", "Nirmala UI", "Noto Sans Devanagari", Arial, sans-serif;
+         color: #1a1a1a; font-size: 10pt; line-height: 1.45; margin: 0; }
+  .mr { font-family: "Nirmala UI", "Noto Sans Devanagari", "Mangal", sans-serif; }
+  header { display: flex; justify-content: space-between; align-items: flex-end;
+           border-bottom: 2px solid #1a1a1a; padding-bottom: 8px; margin-bottom: 14px; }
+  .brand { font-weight: 700; font-size: 13pt; letter-spacing: .3px; }
+  .brand span { color: #3f6b4a; }
+  .meta { text-align: right; font-size: 8.5pt; color: #555; }
+  h1 { font-size: 19pt; margin: 0 0 2px; }
+  .sub { color: #555; margin-bottom: 12px; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 9px; font-size: 8.5pt; font-weight: 600;
+          background: #eee; color: #444; margin-left: 6px; vertical-align: middle; }
+  .pill.final { background: #e3eee6; color: #2f5539; }
+  .banner { border-radius: 8px; padding: 9px 12px; margin: 8px 0 12px; font-size: 9.5pt; }
+  .banner.info { background: #e8eff6; color: #2b4a63; }
+  .banner.draft { background: #fbe9e5; color: #8a2a17; font-weight: 600; }
+  .verdict { border-radius: 10px; padding: 12px 14px; margin: 10px 0 14px; }
+  .verdict h2 { margin: 0 0 4px; font-size: 14pt; }
+  .v-go { background: #e3eee6; color: #2f5539; }
+  .v-fix_first { background: #f5efdc; color: #6f5412; }
+  .v-no_go { background: #fbe9e5; color: #8a2a17; }
+  .v-none { background: #f1f1f1; color: #555; }
+  h3 { font-size: 9pt; letter-spacing: .9px; color: #555; margin: 16px 0 5px; text-transform: uppercase; }
+  table { width: 100%; border-collapse: collapse; page-break-inside: auto; }
+  tr { page-break-inside: avoid; }
+  td, th { border-bottom: 1px solid #e4e4e4; padding: 5px 6px; vertical-align: top; text-align: left; }
+  th { font-size: 8.5pt; color: #666; font-weight: 600; }
+  td.k { width: 38%; color: #444; }
+  td.v { font-weight: 600; }
+  .src { font-weight: 400; color: #777; font-size: 8.5pt; }
+  .todo { color: #8a6a1a; font-weight: 600; }
+  .flag { border-radius: 6px; padding: 5px 9px; margin: 4px 0; font-size: 9pt; font-weight: 600; }
+  .flag.high { background: #fbe9e5; color: #8a2a17; }
+  .flag.medium { background: #f5efdc; color: #6f5412; }
+  .note { color: #555; font-size: 9pt; margin: 4px 0; }
+  .scope { margin-top: 18px; font-size: 8.5pt; color: #666; border-top: 1px solid #ddd; padding-top: 8px; }
+  .sign { margin-top: 14px; padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px; }
+  .watermark { position: fixed; top: 40%; left: 0; right: 0; text-align: center; font-size: 80pt;
+               color: rgba(180, 40, 20, .07); transform: rotate(-30deg); font-weight: 800; z-index: -1; }
+</style>
+</head>
+<body>
+{{$s := .Sections}}
+{{if eq .Status "draft"}}<div class="watermark">DRAFT</div>{{end}}
+
+<header>
+  <div class="brand">Scriddd<span>Hub</span></div>
+  <div class="meta">Report {{.ReportID}}<br>As of {{dayv $s.AsOf}}</div>
+</header>
+
+<h1>Parcel Due-Diligence Report</h1>
+<div class="sub">
+  {{$s.ParcelName}} · {{if eq .Tier "full"}}Full Report{{else}}Quick Screen{{end}}
+  {{if eq .Status "signed"}}<span class="pill final">Signed {{day .FinalisedAt}}</span>
+  {{else if eq .Status "issued"}}<span class="pill final">Issued {{day .FinalisedAt}}</span>
+  {{else}}<span class="pill">Draft</span>{{end}}
+</div>
+
+{{if eq .Status "signed"}}<div class="banner info">Signed by {{$s.AdvocateName}} ({{$s.AdvocateEnrolment}}) on {{day .FinalisedAt}}. This report is frozen and won’t change.</div>
+{{else if eq .Status "issued"}}<div class="banner info">Issued on {{day .FinalisedAt}} without a lawyer. A Quick Screen is not a lawyer’s opinion.</div>
+{{else}}<div class="banner draft">Draft — not final. {{if .OpenItems}}Still open: {{range $i, $o := .OpenItems}}{{if $i}} · {{end}}{{$o}}{{end}}.{{end}} Don’t rely on it to pay a token.</div>{{end}}
+
+<div class="verdict {{if $s.Verdict}}v-{{$s.Verdict}}{{else}}v-none{{end}}">
+  <h2>{{if $s.Verdict}}{{verdictLabel $s.Verdict}}{{else}}No verdict yet{{end}}</h2>
+  {{if $s.VerdictSummary}}<div>{{$s.VerdictSummary}}</div>{{end}}
+  {{if $s.FixList}}<ul>{{range $s.FixList}}<li>{{.}}</li>{{end}}</ul>{{end}}
+</div>
+
+{{if and (eq .Status "draft") $s.Requirements}}
+<h3>Still to collect</h3>
+<table>
+  <tr><th>Item</th><th>Where it comes from</th><th>Who</th></tr>
+  {{range $s.Requirements}}<tr><td>{{.Section}}. {{.Item}}{{if and (not .InQuick) (eq $.Tier "quick")}} <span class="src">(Full Report)</span>{{end}}</td><td class="src">{{.Source}}</td><td>{{who .Who}}</td></tr>{{end}}
+</table>
+{{end}}
+
+<h3>A. Snapshot</h3>
+<table>
+  <tr><td class="k">Location</td><td class="v">{{if $s.Latitude}}{{f4 (deref $s.Latitude)}}, {{f4 (deref $s.Longitude)}} (pinned){{else}}{{$s.Location}}{{end}}</td></tr>
+  <tr><td class="k">Survey / gat no.</td><td class="v">{{if $s.SurveyNumber}}{{$s.SurveyNumber}}{{else}}<span class="todo">To collect</span>{{end}}</td></tr>
+  <tr><td class="k">Village</td><td class="v">{{$s.Village}}{{if $s.Taluka}}, {{$s.Taluka}}{{end}}{{if $s.District}}, {{$s.District}}{{end}}</td></tr>
+  <tr><td class="k">Area</td><td class="v">{{if $s.AreaAcres}}{{f2 (deref $s.AreaAcres)}} acres{{end}}</td></tr>
+  <tr><td class="k">Asking price</td><td class="v">{{if $s.AskingRupees}}{{crore $s.AskingRupees}}{{else}}No price{{end}}</td></tr>
+</table>
+
+{{with $s.SevenTwelve}}
+<h3>From the 7/12 extract</h3>
+{{range .Flags}}<div class="flag {{.Level}}">{{.Text}}</div>{{end}}
+<table>
+  <tr><td class="k">Survey / gat no. on the 7/12</td><td class="v mr">{{.Data.SurveyNumber}}</td></tr>
+  <tr><td class="k">Tenure</td><td class="v">{{tenure .Data.Tenure}}</td></tr>
+  <tr><td class="k">Area</td><td class="v">{{.Data.TotalAreaHR}} ha{{if .AreaAcres}} <span class="src">({{f2 (deref .AreaAcres)}} acres)</span>{{end}}</td></tr>
+  {{range .Data.Owners}}{{if not .Former}}<tr><td class="k">Holder</td><td class="v mr">{{.Name}}{{if .MutationNo}} <span class="src">mutation {{.MutationNo}}</span>{{end}}{{if .AreaHR}} <span class="src">{{.AreaHR}} ha</span>{{end}}</td></tr>{{end}}{{end}}
+  {{if .Data.Tenants}}<tr><td class="k">Tenant</td><td class="v mr">{{.Data.Tenants}}</td></tr>{{end}}
+  {{range .Data.OtherRights}}<tr><td class="k">Other right</td><td class="v mr">{{.}}</td></tr>{{end}}
+  {{if .Data.LastMutation}}<tr><td class="k">Last mutation</td><td class="v mr">{{.Data.LastMutation}}</td></tr>{{end}}
+  <tr><td class="k">Checked</td><td class="v">by {{.ConfirmedBy}}, {{dayv .ConfirmedAt}} <span class="src">(read from a photo, every field checked by a person)</span></td></tr>
+</table>
+{{end}}
+
+<h3>B. Title chain (30 years)</h3>
+{{with $s.Mutations}}
+<p class="note">From the mutation register (Ferfar), going back {{.YearsCovered}} years. Every entry checked by {{.ConfirmedBy}}, {{dayv .ConfirmedAt}}.</p>
+{{range .Flags}}<div class="flag {{.Level}}">{{.Text}}</div>{{end}}
+<table>
+  <tr><th>Mutation</th><th>Date</th><th>Entry</th><th>Status</th></tr>
+  {{range .Entries}}<tr><td>{{.Number}}</td><td class="mr">{{.Date}}</td><td class="mr"><b>{{mutationType .Type}}</b>{{if .From}} · from {{.From}}{{end}}{{if .To}} · to {{.To}}{{end}}{{if .SurveyNumbers}} <span class="src">Sy {{.SurveyNumbers}}</span>{{end}}</td><td>{{if eq .Status "pending"}}<span class="todo">Pending</span>{{else if eq .Status "rejected"}}<span class="todo">Rejected</span>{{else if eq .Status "certified"}}Certified{{end}}</td></tr>{{end}}
+</table>
+{{end}}
+{{if $s.TitleChain}}
+<table>{{range $s.TitleChain}}<tr><td class="k">{{.Title}}</td><td class="v">{{.Description}}{{if .IsFinal}} <span class="src">(end of chain)</span>{{end}}</td></tr>{{end}}</table>
+{{else if not $s.Mutations}}<p class="note todo">To collect: owners over the last 30 years, from the mutation register (Ferfar) and Index-II.</p>{{end}}
+
+<h3>C. Encumbrance &amp; litigation</h3>
+{{if $s.LegalCheckStarted}}
+<table>
+  {{range $s.Risks}}<tr><td class="k">{{.Area}}</td><td class="v">{{risk .Level}}{{if .Note}} <span class="src">{{.Note}}</span>{{end}}</td></tr>{{end}}
+  {{range $s.Searches}}<tr><td class="k">{{.SearchType}}</td><td class="v">{{if .Completed}}Done{{else}}<span class="todo">Not done</span>{{end}}</td></tr>{{end}}
+  {{range $s.Documents}}<tr><td class="k">{{.DocumentType}}</td><td class="v">{{if eq .Status "received"}}Received{{else}}<span class="todo">Pending</span>{{end}}</td></tr>{{end}}
+</table>
+{{if $s.SearchSummary}}<p class="note">{{$s.SearchSummary}}</p>{{end}}
+{{else}}<p class="note todo">The legal check hasn’t started.</p>{{end}}
+
+<h3>D. Land status</h3>
+<table>
+  <tr><td class="k">Occupancy class</td><td class="v">{{with occ $s.OccupancyClass}}{{.}}{{else}}<span class="todo">To collect</span>{{end}}</td></tr>
+  <tr><td class="k">NA conversion</td><td class="v">{{with na $s.NAStatus}}{{.}}{{else}}<span class="todo">To collect</span>{{end}}</td></tr>
+  <tr><td class="k">Tenancy and other rights</td><td class="v mr">{{if $s.TenancyRemarks}}{{$s.TenancyRemarks}}{{else}}<span class="todo">To collect</span>{{end}}</td></tr>
+  {{range $s.ESZ}}<tr><td class="k">{{.Name}} <span class="src">{{.SONumber}}, {{.NotifiedOn}}{{if eq .Status "draft"}}, draft{{end}}</span></td>
+    <td class="v">{{if .Listed}}<span style="color:#8a2a17">Village listed ({{.Coverage}}{{if not .Exact}}, spelled “{{.ListedAs}}”, to confirm{{end}})</span> <span class="src">{{.Summary}}</span>{{else}}Village not in this notification’s list{{end}}</td></tr>{{end}}
+  <tr><td class="k">Coastal / forest{{if not $s.ESZ}} / eco-sensitive zone{{end}}</td><td class="v">{{if $s.CRZForestESZ}}{{$s.CRZForestESZ}}{{else}}<span class="todo">To collect</span>{{end}}</td></tr>
+  <tr><td class="k">Reservation on the plot</td><td class="v">{{if $s.DPReservation}}{{$s.DPReservation}}{{else}}<span class="todo">To collect</span>{{end}}</td></tr>
+</table>
+
+<h3>E. Development potential</h3>
+<table>
+  <tr><td class="k">Development Plan zone</td><td class="v">{{if $s.DPZone}}{{$s.DPZone}}{{else}}<span class="todo">To collect</span>{{end}}</td></tr>
+  {{if $s.PlanningAuthority}}<tr><td class="k">Planning authority</td><td class="v">{{authority $s.PlanningAuthority}}{{if $s.RoadWidthM}} <span class="src">access road {{f2 (deref $s.RoadWidthM)}} m</span>{{end}}</td></tr>{{end}}
+  {{if $s.MaxFSI}}<tr><td class="k">FSI (architect)</td><td class="v">{{if $s.BaseFSI}}{{f2 (deref $s.BaseFSI)}} base · {{end}}up to {{f2 (deref $s.MaxFSI)}}</td></tr>
+  {{else if $s.FSIBand}}<tr><td class="k">FSI (indicative band)</td><td class="v">{{f2 $s.FSIBand.Basic}} base · up to {{f2 $s.FSIBand.Max}} <span class="src">({{f2 $s.FSIBand.MaxWithAncillary}} with ancillary FSI) · {{$s.FSIBand.Source}} · architect to confirm</span></td></tr>
+  {{else}}<tr><td class="k">FSI</td><td class="v"><span class="todo">To collect</span>{{if $s.FSINote}} <span class="src">{{$s.FSINote}}</span>{{end}}</td></tr>{{end}}
+  {{if $s.BuildableSqft}}<tr><td class="k">Buildable area</td><td class="v">{{sqft $s.BuildableSqft}} <span class="src">area × max FSI, before road and amenity deductions</span></td></tr>{{end}}
+  {{range $s.Infrastructure}}<tr><td class="k">{{if .Planned}}Planned{{else}}Nearby hazard{{end}}</td><td class="v">{{.Name}}{{if .DistanceKm}} <span class="src">{{f2 (deref .DistanceKm)}} km{{if .Status}} · {{.Status}}{{end}}</span>{{end}}</td></tr>{{end}}
+</table>
+{{if $s.DevelopmentNote}}<p class="note">{{$s.DevelopmentNote}}</p>{{end}}
+
+<h3>F. Seller &amp; co-developer track record</h3>
+{{if $s.SellerProjects}}
+{{if $s.SellerSummary}}<p class="note">{{$s.SellerSummary}}</p>{{end}}
+<table>{{range $i, $p := $s.SellerProjects}}{{if lt $i 12}}<tr><td class="k">{{$p.ProjectName}} <span class="src">MahaRERA {{$p.RERARegistrationNumber}}</span></td><td class="v">{{$p.DeliveryStatus}}</td></tr>{{end}}{{end}}</table>
+{{else}}<p class="note todo">To collect: the seller’s MahaRERA projects and complaints.</p>{{end}}
+
+<h3>G. Valuation</h3>
+{{if and $s.Valued (not $s.ValueIndicative)}}
+<table>
+  <tr><td class="k">Value today</td><td class="v">{{crore $s.ValueLowRupees}} to {{crore $s.ValueHighRupees}} <span class="src">likely {{crore $s.ValueLikelyRupees}}</span></td></tr>
+  {{if $s.FutureLikelyRupees}}<tr><td class="k">Value in {{$s.FutureYear}}</td><td class="v">{{crore $s.FutureLikelyRupees}}</td></tr>{{end}}
+  <tr><td class="k">Against asking</td><td class="v">{{$s.PriceVerdict}} {{if $s.ValueBasis}}<span class="src">{{$s.ValueBasis}}</span>{{end}}</td></tr>
+</table>
+{{else if $s.Valued}}<p class="note todo">No registered sales or government rate on record for this area yet, so no value is given. Registered sale prices for the village and the ready-reckoner rate are being collected.</p>
+{{else}}<p class="note todo">To collect: valuation.</p>{{end}}
+
+<div class="scope">
+  <b>Scope.</b> This report covers the documents and records listed above, as of {{dayv $s.AsOf}}. Each line names
+  where it comes from. Government land records are presumptive, not a guarantee of title, and nothing here is a
+  “clean title” or “verified” certificate.
+  {{if eq .Tier "full"}}The title opinion is the signing advocate’s.{{else}}A Quick Screen is not a lawyer’s opinion.{{end}}
+  The FSI band and buildable area are indicative; an architect confirms them.<br>
+  ScridddHub · report {{.ReportID}} · generated {{dayv .GeneratedAt}}
+</div>
+
+{{if eq .Status "signed"}}
+<div class="sign">Signed by <b>{{$s.AdvocateName}}</b>, Bar Council enrolment {{$s.AdvocateEnrolment}}, on {{day .FinalisedAt}}.</div>
+{{end}}
+</body>
+</html>

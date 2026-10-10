@@ -1,12 +1,9 @@
 package llm
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -26,7 +23,7 @@ type GroqSevenTwelveReader struct {
 }
 
 func NewGroqSevenTwelveReader(apiKey string) *GroqSevenTwelveReader {
-	return &GroqSevenTwelveReader{apiKey: apiKey, model: "qwen/qwen3.8-27b", client: &http.Client{Timeout: 90 * time.Second}}
+	return &GroqSevenTwelveReader{apiKey: apiKey, client: &http.Client{Timeout: 90 * time.Second}}
 }
 
 var _ usecase.SevenTwelveReader = (*GroqSevenTwelveReader)(nil)
@@ -84,51 +81,9 @@ type visionRequest struct {
 }
 
 func (g *GroqSevenTwelveReader) ReadSevenTwelve(ctx context.Context, image []byte, mimeType string) (*domain.SevenTwelve, string, error) {
-	dataURL := "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(image)
-	body, err := json.Marshal(visionRequest{
-		Model: g.model,
-		Messages: []visionMessage{
-			{Role: "system", Content: sevenTwelveSystemPrompt},
-			{Role: "user", Content: []visionContent{
-				{Type: "text", Text: "Read this 7/12 extract."},
-				{Type: "image_url", ImageURL: &visionImageURL{URL: dataURL}},
-			}},
-		},
-		ResponseFormat: groqResponseFormat{Type: "json_object"},
-		Temperature:    0,
-	})
+	content, err := groqVisionJSON(ctx, g.client, g.apiKey, sevenTwelveSystemPrompt, "Read this 7/12 extract.", image, mimeType)
 	if err != nil {
 		return nil, "", err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, groqChatCompletionsURL, bytes.NewReader(body))
-	if err != nil {
-		return nil, "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+g.apiKey)
-	resp, err := g.client.Do(req)
-	if err != nil {
-		return nil, "", err
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, "", err
-	}
-	var chat groqChatResponse
-	if err := json.Unmarshal(raw, &chat); err != nil {
-		return nil, "", fmt.Errorf("parsing groq response: %w", err)
-	}
-	if chat.Error != nil {
-		return nil, "", fmt.Errorf("groq API error: %s", chat.Error.Message)
-	}
-	if len(chat.Choices) == 0 {
-		return nil, "", fmt.Errorf("groq returned no choices")
-	}
-	content := strings.TrimSpace(chat.Choices[0].Message.Content)
-	// Reasoning models sometimes wrap the JSON; keep the outermost object.
-	if i, j := strings.Index(content, "{"), strings.LastIndex(content, "}"); i >= 0 && j > i {
-		content = content[i : j+1]
 	}
 	var s domain.SevenTwelve
 	if err := json.Unmarshal([]byte(content), &s); err != nil {
@@ -136,7 +91,7 @@ func (g *GroqSevenTwelveReader) ReadSevenTwelve(ctx context.Context, image []byt
 	}
 	s.OtherRights = nonEmpty(s.OtherRights)
 	s.PendingMutations = nonEmpty(s.PendingMutations)
-	return &s, g.model, nil
+	return &s, groqVisionModel, nil
 }
 
 func nonEmpty(in []string) []string {

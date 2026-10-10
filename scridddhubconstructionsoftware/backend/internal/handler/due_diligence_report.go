@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/scridddhub/backend/internal/domain"
 	"github.com/scridddhub/backend/internal/middleware"
+	"github.com/scridddhub/backend/internal/reportpdf"
 	"github.com/scridddhub/backend/internal/usecase"
 )
 
@@ -179,6 +182,55 @@ func (h *DueDiligenceReportHandler) DraftVerdict(w http.ResponseWriter, r *http.
 		return
 	}
 	writeJSON(w, http.StatusOK, toReportSummary(rep))
+}
+
+// Document handles GET /reports/{reportID}/pdf: the report as an A4 PDF a builder can forward
+// (?format=html returns the same page as HTML). A draft is watermarked DRAFT and lists what's
+// still open; a signed or issued report is printed from its frozen copy.
+func (h *DueDiligenceReportHandler) Document(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("reportID"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	rep, sections, err := h.usecase.Get(r.Context(), id)
+	if err != nil {
+		writeReportError(w, err)
+		return
+	}
+	page, err := reportpdf.HTML(reportpdf.Document{
+		ReportID: rep.ID.String()[:8], Tier: rep.Tier, Status: rep.Status, FinalisedAt: rep.FinalisedAt,
+		OpenItems: rep.OpenItems(), Sections: sections, GeneratedAt: time.Now(),
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if r.URL.Query().Get("format") == "html" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(page)
+		return
+	}
+	pdf, err := reportpdf.PDF(r.Context(), page)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	name := "due-diligence-" + strings.ReplaceAll(strings.ToLower(sections.ParcelName), " ", "-") + ".pdf"
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", `inline; filename="`+safeFilename(name)+`"`)
+	w.Write(pdf)
+}
+
+// safeFilename keeps letters, digits, dots and dashes so the header can't be broken.
+func safeFilename(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '-' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // Finalise handles POST /reports/{reportID}/finalise: signs a Full report (advocate name and

@@ -11,19 +11,19 @@ import (
 // village/zone, for one effective year — see services/estimatedparcelvalue/README.md for the full
 // research behind this. Reference/master data, not something a user of the app edits.
 type ReadyReckonerRate struct {
-	ID                uuid.UUID
-	District          string
-	Taluka            string
-	Village           string
-	ZoneNo            string
-	RatePerSqmRupees  int64
-	EffectiveYear     string
-	SourceURL         string
-	VerifiedAt        time.Time
-	VerifiedBy        string
-	Note              string
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	ID               uuid.UUID
+	District         string
+	Taluka           string
+	Village          string
+	ZoneNo           string
+	RatePerSqmRupees int64
+	EffectiveYear    string
+	SourceURL        string
+	VerifiedAt       time.Time
+	VerifiedBy       string
+	Note             string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 func (r *ReadyReckonerRate) Validate() error {

@@ -27,7 +27,7 @@ func (s LandParcelStage) Valid() bool {
 }
 
 type LandParcel struct {
-	ID         uuid.UUID
+	ID        uuid.UUID
 	ProjectID uuid.UUID
 	Name      string
 	Location  string
@@ -78,9 +78,9 @@ type LandParcel struct {
 	ClosedPriceRupees *int64
 	ClosedAt          *time.Time
 	Stage             LandParcelStage
-	Notes     string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	Notes             string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 func (p *LandParcel) Validate() error {

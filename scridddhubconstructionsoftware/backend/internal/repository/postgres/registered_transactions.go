@@ -37,7 +37,9 @@ func (r *RegisteredTransactionRepository) FindNearby(ctx context.Context, q doma
  AND ( ($3::float8 IS NOT NULL AND t.location_method IN ('pin','survey_centre')
         AND t.latitude BETWEEN $3-0.028 AND $3+0.028
         AND t.longitude BETWEEN $4::float8-0.05 AND $4+0.05)
- OR ($3::float8 IS NULL AND (d.code=$5 OR lower(d.name)=lower($5))
+ -- Same village: always for an unpinned parcel; for a pinned one, sales entered from Index-II
+ -- (village + survey no., no coordinates) count too, labelled "same village" rather than a distance.
+ OR (($3::float8 IS NULL OR t.location_method = 'unknown') AND $7 <> '' AND (d.code=$5 OR lower(d.name)=lower($5))
      AND (a.code=$6 OR lower(a.name)=lower($6)) AND (v.code=$7 OR lower(v.name)=lower($7))))
  ORDER BY t.registration_date DESC,t.id`, q.From.Format("2006-01-02"), q.To.Format("2006-01-02"), q.Latitude, q.Longitude, q.District, q.Taluka, q.Village)
 	if err != nil {
@@ -50,7 +52,7 @@ func (r *RegisteredTransactionRepository) FindNearby(ctx context.Context, q doma
 		if err = rows.Scan(&t.ID, &t.RegistrationDate, &t.DocumentNo, &t.OfficeCode, &t.OfficeName, &t.DistrictCode, &t.TalukaCode, &t.VillageCode, &t.SurveyNo, &t.PropertyType, &t.DeedType, &t.AreaAcres, &t.SalePriceRupees, &t.GovernmentValueRupees, &t.Latitude, &t.Longitude, &t.LocationMethod, &t.Comparable, &t.ExclusionReason, &t.ReviewedBy, &t.Source, &t.SourceURL, &t.SourceRecordID); err != nil {
 			return nil, err
 		}
-		if q.Latitude != nil {
+		if q.Latitude != nil && t.Latitude != nil {
 			distance := domain.HaversineKm(domain.GeoPoint{Latitude: *q.Latitude, Longitude: *q.Longitude}, domain.GeoPoint{Latitude: *t.Latitude, Longitude: *t.Longitude})
 			if distance > domain.TransactionRadiusKm {
 				continue
@@ -60,6 +62,21 @@ func (r *RegisteredTransactionRepository) FindNearby(ctx context.Context, q doma
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+// ResolveVillage finds the government codes for a village named by district, taluka and village.
+func (r *RegisteredTransactionRepository) ResolveVillage(ctx context.Context, district, taluka, village string) (districtCode, talukaCode, villageCode string, err error) {
+	err = r.pool.QueryRow(ctx, `
+		SELECT v.district_code, v.taluka_code, v.code
+		FROM mh_villages v
+		JOIN mh_talukas a ON (a.district_code, a.code) = (v.district_code, v.taluka_code)
+		JOIN mh_districts d ON d.code = v.district_code
+		WHERE lower(d.name) = lower($1) AND lower(a.name) = lower($2) AND lower(v.name) = lower($3)
+		LIMIT 1`, district, taluka, village).Scan(&districtCode, &talukaCode, &villageCode)
+	if err == pgx.ErrNoRows {
+		return "", "", "", domain.ErrNotFound
+	}
+	return
 }
 
 func (r *RegisteredTransactionRepository) ClaimTransactionSearch(ctx context.Context, key string, q domain.TransactionQuery) (domain.TransactionCoverage, bool, error) {

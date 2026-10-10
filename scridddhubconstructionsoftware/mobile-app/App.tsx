@@ -31,6 +31,8 @@ import { ParcelHubScreen, type HubTarget } from './src/screens/ParcelHubScreen';
 import { OrderReportScreen } from './src/screens/OrderReportScreen';
 import { ReportScreen } from './src/screens/ReportScreen';
 import { SevenTwelveScreen } from './src/screens/SevenTwelveScreen';
+import { AddSaleScreen } from './src/screens/AddSaleScreen';
+import { FerfarScreen } from './src/screens/FerfarScreen';
 import { DEV_PROJECT_ID } from './src/config/devProject';
 
 // Tapping a parcel opens its hub (ParcelHubScreen): one card per screen, and Back from any of
@@ -48,6 +50,8 @@ type Route =
   | { name: 'orderReport'; parcelId: string }
   | { name: 'report'; parcelId: string; reportId: string }
   | { name: 'sevenTwelve'; parcelId: string; reportId?: string }
+  | { name: 'addSale'; parcelId: string; reportId: string }
+  | { name: 'ferfar'; parcelId: string; reportId: string }
   | { name: 'parcelDetail'; parcelId: string }
   | { name: 'pinLocation'; parcelId: string }
   | { name: 'legalCheck'; parcelId: string }
@@ -81,6 +85,9 @@ function parentOf(route: Route): Route | null {
       return { name: 'list' };
     case 'report':
       return { name: 'orderReport', parcelId: route.parcelId };
+    case 'addSale':
+    case 'ferfar':
+      return { name: 'report', parcelId: route.parcelId, reportId: route.reportId };
     case 'sevenTwelve':
       return route.reportId
         ? { name: 'report', parcelId: route.parcelId, reportId: route.reportId }
@@ -157,6 +164,20 @@ function App() {
             onBack={() => setRoute({ name: 'orderReport', parcelId: route.parcelId })}
             onOpenLegalCheck={() => setRoute({ name: 'legalCheck', parcelId: route.parcelId })}
             onOpenSevenTwelve={() => setRoute({ name: 'sevenTwelve', parcelId: route.parcelId, reportId: route.reportId })}
+            onOpenSales={() => setRoute({ name: 'addSale', parcelId: route.parcelId, reportId: route.reportId })}
+            onOpenFerfar={() => setRoute({ name: 'ferfar', parcelId: route.parcelId, reportId: route.reportId })}
+          />
+        )}
+        {route.name === 'ferfar' && (
+          <FerfarScreen
+            parcelId={route.parcelId}
+            onBack={() => setRoute({ name: 'report', parcelId: route.parcelId, reportId: route.reportId })}
+          />
+        )}
+        {route.name === 'addSale' && (
+          <AddSaleScreen
+            parcelId={route.parcelId}
+            onBack={() => setRoute({ name: 'report', parcelId: route.parcelId, reportId: route.reportId })}
           />
         )}
         {route.name === 'sevenTwelve' && (

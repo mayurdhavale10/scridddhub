@@ -533,6 +533,111 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /land-parcels/{id}/ferfar/read:
+    post:
+      operationId: readFerfar
+      summary: Read one photo of mutation register entries into a draft (nothing is saved)
+      parameters:
+        - $ref: "#/components/parameters/LandParcelId"
+      requestBody:
+        required: true
+        content:
+          image/jpeg:
+            schema: { type: string, format: binary }
+          image/png:
+            schema: { type: string, format: binary }
+          image/webp:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: Draft
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FerfarDraft"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: Not a readable photo
+
+  /land-parcels/{id}/ferfar:
+    get:
+      operationId: getFerfar
+      summary: The parcel's confirmed mutation register (404 until confirmed)
+      parameters:
+        - $ref: "#/components/parameters/LandParcelId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LandMutations"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: confirmFerfar
+      summary: Save the mutation register after a person has checked every entry
+      parameters:
+        - $ref: "#/components/parameters/LandParcelId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  $ref: "#/components/schemas/MutationRegister"
+                read_by:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LandMutations"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /registered-transactions:
+    post:
+      operationId: recordRegisteredSale
+      summary: Record one land sale typed from an Index-II copy
+      description: >-
+        Our team searches Index-II for a village and enters each land sale. The person entering it
+        is its reviewer; non-comparable sales need a reason. Valuations then use same-village sales
+        as evidence (a typical rate needs at least 3 comparable sales).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [district, taluka, village, registration_date, document_no, office_name, property_type, area_acres, sale_price_rupees, comparable]
+              properties:
+                district: { type: string }
+                taluka: { type: string }
+                village: { type: string }
+                survey_no: { type: string }
+                registration_date: { type: string, description: YYYY-MM-DD }
+                document_no: { type: string }
+                office_name: { type: string }
+                property_type: { type: string, enum: [land, plot] }
+                area_acres: { type: number }
+                sale_price_rupees: { type: integer, format: int64 }
+                government_value_rupees: { type: integer, format: int64, nullable: true }
+                comparable: { type: boolean }
+                exclusion_reason: { type: string }
+                notes: { type: string }
+      responses:
+        "201":
+          description: Recorded
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
   /reference/location-guess:
     get:
       operationId: guessLocation
@@ -3296,6 +3401,82 @@ components:
         confirmed_by: { type: string }
         confirmed_at: { type: string }
 
+    MutationEntry:
+      type: object
+      required: [number, date, type, status]
+      properties:
+        number: { type: string }
+        date: { type: string, description: dd/mm/yyyy as written }
+        type:
+          type: string
+          enum: [sale, inheritance, gift, partition, charge, charge_released, na, court_order, acquisition, other]
+        from: { type: string }
+        to: { type: string }
+        survey_numbers: { type: string }
+        status: { type: string, enum: ["", certified, pending, rejected] }
+        remarks: { type: string }
+
+    MutationRegister:
+      type: object
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/MutationEntry" }
+        notes: { type: string }
+
+    FerfarDraft:
+      type: object
+      required: [data, flags, read_by]
+      properties:
+        data: { $ref: "#/components/schemas/MutationRegister" }
+        flags:
+          type: array
+          items: { $ref: "#/components/schemas/SevenTwelveFlag" }
+        read_by: { type: string }
+
+    LandMutations:
+      type: object
+      required: [data, flags, years_covered, confirmed_by, confirmed_at]
+      properties:
+        data: { $ref: "#/components/schemas/MutationRegister" }
+        flags:
+          type: array
+          items: { $ref: "#/components/schemas/SevenTwelveFlag" }
+        years_covered: { type: integer }
+        read_by: { type: string }
+        confirmed_by: { type: string }
+        confirmed_at: { type: string }
+
+    ReportMutations:
+      type: object
+      required: [entries, flags, years_covered, confirmed_by, confirmed_at]
+      properties:
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/MutationEntry" }
+        flags:
+          type: array
+          items: { $ref: "#/components/schemas/SevenTwelveFlag" }
+        years_covered: { type: integer }
+        confirmed_by: { type: string }
+        confirmed_at: { type: string }
+
+    ReportESZ:
+      type: object
+      required: [name, so_number, notified_on, status, source_url, summary, listed, exact]
+      properties:
+        name: { type: string }
+        so_number: { type: string }
+        notified_on: { type: string }
+        status: { type: string, enum: [final, draft] }
+        source_url: { type: string }
+        summary: { type: string }
+        listed: { type: boolean }
+        coverage: { type: string }
+        exact: { type: boolean, description: "false: spelling differs slightly; a person confirms" }
+        listed_as: { type: string }
+
     ReportSevenTwelve:
       type: object
       required: [data, flags, confirmed_by, confirmed_at]
@@ -3364,6 +3545,12 @@ components:
           type: string
         seven_twelve:
           $ref: "#/components/schemas/ReportSevenTwelve"
+        esz:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReportESZ"
+        mutations:
+          $ref: "#/components/schemas/ReportMutations"
         area_acres:
           type: number
         asking_rupees:

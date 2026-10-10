@@ -52,6 +52,8 @@ func main() {
 	registeredTransactionsUC := usecase.NewRegisteredTransactionsUsecase(
 		landParcelRepo, postgres.NewRegisteredTransactionRepository(pool), nil)
 	registeredTransactionsHandler := handler.NewRegisteredTransactionsHandler(registeredTransactionsUC)
+	// Sales typed from Index-II copies by our team: the valuation's evidence until a collector exists.
+	saleEntryHandler := handler.NewRegisteredSaleEntryHandler(usecase.NewRegisteredSaleEntryUsecase(postgres.NewRegisteredTransactionRepository(pool)))
 	feasibilityAssessmentRepo := postgres.NewFeasibilityAssessmentRepository(pool)
 	legalCheckRepo := postgres.NewLegalCheckRepository(pool)
 	governmentApprovalRepo := postgres.NewGovernmentApprovalRepository(pool)
@@ -143,19 +145,23 @@ func main() {
 	// A parcel's 7/12: the AI reads a photo into a draft, a person confirms it.
 	landRecordRepo := postgres.NewLandRecordRepository(pool)
 	landRecordHandler := handler.NewLandRecordHandler(usecase.NewLandRecordUsecase(
-		landRecordRepo, landParcelRepo, llm.NewGroqSevenTwelveReader(groqAPIKey)))
+		landRecordRepo, landParcelRepo, llm.NewGroqSevenTwelveReader(groqAPIKey)).WithFerfarReader(llm.NewGroqFerfarReader(groqAPIKey)))
 
 	reportHandler := handler.NewDueDiligenceReportHandler(usecase.NewDueDiligenceReportUsecase(
 		postgres.NewDueDiligenceReportRepository(pool), landParcelRepo, legalCheckRepo,
-		feasibilityAssessmentRepo, plannedInfrastructureUC, llm.NewGroqReportVerdictDrafter(groqAPIKey), landRecordRepo))
+		feasibilityAssessmentRepo, plannedInfrastructureUC, llm.NewGroqReportVerdictDrafter(groqAPIKey), landRecordRepo).WithESZ(postgres.NewESZRepository(pool)))
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /land-parcels/{id}/seven-twelve/read", landRecordHandler.Read)
 	mux.HandleFunc("PUT /land-parcels/{id}/seven-twelve", landRecordHandler.Confirm)
 	mux.HandleFunc("GET /land-parcels/{id}/seven-twelve", landRecordHandler.Get)
+	mux.HandleFunc("POST /land-parcels/{id}/ferfar/read", landRecordHandler.ReadFerfar)
+	mux.HandleFunc("PUT /land-parcels/{id}/ferfar", landRecordHandler.ConfirmFerfar)
+	mux.HandleFunc("GET /land-parcels/{id}/ferfar", landRecordHandler.GetFerfar)
 	mux.HandleFunc("POST /land-parcels/{parcelID}/reports", reportHandler.Create)
 	mux.HandleFunc("GET /land-parcels/{parcelID}/reports", reportHandler.List)
 	mux.HandleFunc("GET /reports/{reportID}", reportHandler.Get)
+	mux.HandleFunc("GET /reports/{reportID}/pdf", reportHandler.Document)
 	mux.HandleFunc("PUT /reports/{reportID}", reportHandler.Update)
 	mux.HandleFunc("POST /reports/{reportID}/draft-verdict", reportHandler.DraftVerdict)
 	mux.HandleFunc("POST /reports/{reportID}/finalise", reportHandler.Finalise)
@@ -215,6 +221,7 @@ func main() {
 	mux.HandleFunc("GET /land-parcels/{parcelID}/planned-infrastructure", plannedInfrastructureHandler.ForParcel)
 	mux.HandleFunc("GET /land-parcels/{parcelID}/registered-transactions", registeredTransactionsHandler.ForParcel)
 	mux.HandleFunc("GET /reference/registered-transactions", registeredTransactionsHandler.ForLocation)
+	mux.HandleFunc("POST /registered-transactions", saleEntryHandler.Record)
 	// Same lookup for any typed location, before a parcel exists (see services/plannedinfrastructure).
 	mux.HandleFunc("GET /reference/planned-infrastructure", plannedInfrastructureHandler.ForLocation)
 

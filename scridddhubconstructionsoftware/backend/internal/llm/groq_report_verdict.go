@@ -74,7 +74,16 @@ func reportVerdictUserMessage(s *usecase.ReportSections) string {
 			w("- %s: %s %s", r.Area, r.Level, r.Note)
 		}
 		w("B. TITLE CHAIN:")
-		if len(s.TitleChain) == 0 {
+		if m := s.Mutations; m != nil {
+			w("Mutation register (checked by a person), going back %d years:", m.YearsCovered)
+			for _, e := range m.Entries {
+				w("- mutation %s, %s: %s from %s to %s (%s)", e.Number, e.Date, domain.MutationTypeLabel(e.Type), orUnknown(e.From), orUnknown(e.To), orUnknown(e.Status))
+			}
+			for _, f := range m.Flags {
+				w("- WARNING (%s): %s", f.Level, f.Text)
+			}
+		}
+		if len(s.TitleChain) == 0 && s.Mutations == nil {
 			w("- no title steps recorded")
 		}
 		for _, c := range s.TitleChain {
@@ -103,6 +112,13 @@ func reportVerdictUserMessage(s *usecase.ReportSections) string {
 	}
 	w("D. LAND STATUS: occupancy class %s; NA status %s; tenancy remarks: %s; CRZ/forest/ESZ: %s; DP reservation: %s.",
 		s.OccupancyClass, s.NAStatus, orUnknown(s.TenancyRemarks), orUnknown(s.CRZForestESZ), orUnknown(s.DPReservation))
+	for _, e := range s.ESZ {
+		if e.Listed {
+			w("ECO-SENSITIVE ZONE: the village is LISTED (%s) in %s (%s, %s). Restrictions: %s", e.Coverage, e.Name, e.SONumber, e.Status, e.Summary)
+		} else {
+			w("ECO-SENSITIVE ZONE: the village is not in the %s list (%s).", e.Name, e.SONumber)
+		}
+	}
 	fsi := "unknown"
 	switch {
 	case s.BaseFSI != nil && s.MaxFSI != nil:

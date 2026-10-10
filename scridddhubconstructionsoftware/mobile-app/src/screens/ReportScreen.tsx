@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -11,7 +12,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { api } from '../api/client';
+import { api, API_BASE_URL } from '../api/client';
 import { colors } from '../theme/colors';
 import type { components } from '@scridddhub/api-client';
 
@@ -24,6 +25,8 @@ type Props = {
   onBack: () => void;
   onOpenLegalCheck: () => void;
   onOpenSevenTwelve: () => void;
+  onOpenSales: () => void;
+  onOpenFerfar: () => void;
 };
 
 // Screen 6.2: the Parcel Due-Diligence Report (services/duediligencereport/README.md). Sections
@@ -64,7 +67,11 @@ const AUTHORITY: Record<string, string> = {
   mumbai: 'Mumbai (DCPR)',
   cidco_naina: 'CIDCO / NAINA',
 };
-const WHO: Record<string, string> = { team: 'Our team', advocate: 'Advocate', builder: 'You' };
+const MUTATION: Record<string, string> = {
+  sale: 'Sale', inheritance: 'Inheritance', gift: 'Gift', partition: 'Partition', charge: 'Bank charge',
+  charge_released: 'Charge released', na: 'NA order', court_order: 'Court order', acquisition: 'Acquisition', other: 'Other',
+};
+const WHO: Record<string, string> ={ team: 'Our team', advocate: 'Advocate', builder: 'You' };
 
 // A gap in the report reads as work in progress, never as a blank.
 const TO_COLLECT = 'To collect';
@@ -236,7 +243,7 @@ function SheetButtons({ onCancel, onSave, saveLabel }: { onCancel: () => void; o
 
 // ---- Screen --------------------------------------------------------------------------------
 
-export function ReportScreen({ reportId, onBack, onOpenLegalCheck, onOpenSevenTwelve }: Props) {
+export function ReportScreen({ reportId, onBack, onOpenLegalCheck, onOpenSevenTwelve, onOpenSales, onOpenFerfar }: Props) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -387,6 +394,12 @@ export function ReportScreen({ reportId, onBack, onOpenLegalCheck, onOpenSevenTw
         </View>
       ) : null}
 
+      <Pressable
+        style={styles.secondaryWide}
+        onPress={() => Linking.openURL(`${API_BASE_URL}/reports/${reportId}/pdf`)}>
+        <Text style={styles.secondaryBtnText}>{final ? 'Download PDF' : 'Download draft PDF'}</Text>
+      </Pressable>
+
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {!final && reqs.length ? (
@@ -454,14 +467,34 @@ export function ReportScreen({ reportId, onBack, onOpenLegalCheck, onOpenSevenTw
       ) : null}
 
       <Section letter="B" title="Title chain (30 years)">
-        {s.title_chain.length ? (
+        {s.mutations ? (
+          <>
+            <Text style={styles.cardNote}>
+              From the mutation register, going back {s.mutations.years_covered} years. Checked {day(s.mutations.confirmed_at)}.
+            </Text>
+            {s.mutations.flags.map((f, i) => (
+              <View key={i} style={[styles.flag, styles.flagInCard, { backgroundColor: f.level === 'high' ? RED_BG : AMBER_BG }]}>
+                <Text style={[styles.flagText, { color: f.level === 'high' ? colors.error : AMBER }]}>{f.text}</Text>
+              </View>
+            ))}
+            {s.mutations.entries.map((e, i) => (
+              <Row key={e.number + i} label={`${MUTATION[e.type] ?? 'Other'}${e.to ? ` → ${e.to}` : ''}`}
+                sub={`Mutation ${e.number}${e.date ? ` · ${e.date}` : ''}${e.from ? ` · from ${e.from}` : ''}`}
+                value={e.status === 'pending' ? TO_COLLECT : e.status === 'rejected' ? 'Rejected' : e.status === 'certified' ? 'Certified' : undefined}
+                last={i === s.mutations!.entries.length - 1} />
+            ))}
+            {!final ? (
+              <Pressable onPress={onOpenFerfar}><Text style={styles.cardNote}>Add or re-read pages ›</Text></Pressable>
+            ) : null}
+          </>
+        ) : s.title_chain.length ? (
           s.title_chain.map((c, i) => (
             <Row key={i} label={c.title ?? ''} sub={c.description} last={i === s.title_chain.length - 1}
               value={c.is_final ? <Pill bg={colors.secondaryContainer} text={colors.onSecondaryContainer} label="End of chain" /> : undefined} />
           ))
         ) : (
-          <Pressable onPress={onOpenLegalCheck}>
-            <Empty text="To collect: owners over the last 30 years, from the mutation register and Index-II. Record them in the Legal & RERA check ›" />
+          <Pressable onPress={final ? undefined : onOpenFerfar}>
+            <Empty text={`To collect: owners over the last 30 years, from the mutation register (Ferfar).${final ? '' : ' Photograph the entries ›'}`} />
           </Pressable>
         )}
       </Section>
@@ -493,7 +526,13 @@ export function ReportScreen({ reportId, onBack, onOpenLegalCheck, onOpenSevenTw
         <Row label="Occupancy class" value={s.occupancy_class && s.occupancy_class !== 'unknown' ? OCCUPANCY[s.occupancy_class] : TO_COLLECT} />
         <Row label="NA conversion" value={s.na_status && s.na_status !== 'unknown' ? NA[s.na_status] : TO_COLLECT} />
         <Row label="Tenancy and other rights" value={s.tenancy_remarks || TO_COLLECT} />
-        <Row label="CRZ / forest / ESZ" value={s.crz_forest_esz || TO_COLLECT} />
+        {(s.esz ?? []).map(e => (
+          <Row key={e.so_number} label={e.name} sub={`${e.so_number}, ${e.notified_on}${e.listed ? ` · ${e.summary}` : ''}`}
+            value={e.listed
+              ? <Pill bg={RED_BG} text={colors.error} label={e.exact ? `Listed (${e.coverage})` : `Listed as “${e.listed_as}”?`} />
+              : 'Not listed'} />
+        ))}
+        <Row label={(s.esz ?? []).length ? 'Coastal zone / forest' : 'CRZ / forest / ESZ'} value={s.crz_forest_esz || TO_COLLECT} />
         <Row label="Reservation on the plot" value={s.dp_reservation || TO_COLLECT} last />
       </Section>
 
@@ -540,7 +579,9 @@ export function ReportScreen({ reportId, onBack, onOpenLegalCheck, onOpenSevenTw
 
       <Section letter="G" title="Valuation">
         {s.valued && s.value_indicative ? (
-          <Empty text="No registered sales or government rate on record for this area yet, so the report doesn’t put a value on it. Registered sale prices for the village and the ready-reckoner rate are on the list to collect." />
+          <Pressable onPress={final ? undefined : onOpenSales}>
+            <Empty text={`No registered sales or government rate on record for this area yet, so the report doesn’t put a value on it.${final ? '' : ' Add sales from Index-II ›'}`} />
+          </Pressable>
         ) : s.valued ? (
           <>
             <Row label="Value today" value={s.value_low_rupees != null && s.value_high_rupees != null ? `${crore(s.value_low_rupees)} to ${crore(s.value_high_rupees)}` : crore(s.value_likely_rupees)}
@@ -697,6 +738,7 @@ const styles = StyleSheet.create({
   rowValuePending: { color: AMBER },
   flag: { borderRadius: 10, padding: 10 },
   flagText: { fontSize: 13, lineHeight: 18, fontWeight: '600' },
+  flagInCard: { marginHorizontal: 12, marginBottom: 6 },
   sectionAbout: { fontSize: 12, lineHeight: 17, color: colors.onSurfaceVariant },
   cardNote: { fontSize: 12, lineHeight: 17, color: colors.onSurfaceVariant, paddingHorizontal: 14, paddingVertical: 10 },
   empty: { fontSize: 13, color: colors.onSurfaceVariant, padding: 14 },

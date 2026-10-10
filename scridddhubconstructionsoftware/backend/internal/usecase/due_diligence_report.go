@@ -61,6 +61,12 @@ type ReportSections struct {
 	// The parcel's confirmed 7/12: holders, tenure, other rights, and the warning signs read from it.
 	SevenTwelve *ReportSevenTwelve `json:"seven_twelve,omitempty"`
 
+	// D. Eco-sensitive zone check: one result per notification checked (village lists).
+	ESZ []ReportESZ `json:"esz"`
+
+	// B. The confirmed mutation register (Ferfar), oldest first: the ownership chain.
+	Mutations *ReportMutations `json:"mutations,omitempty"`
+
 	// B, C, F come from the Legal & RERA check; LegalCheckStarted is false when there isn't one.
 	LegalCheckStarted bool                           `json:"legal_check_started"`
 	LegalCheckStatus  string                         `json:"legal_check_status,omitempty"`
@@ -118,6 +124,27 @@ type ReportSections struct {
 	Requirements []ReportRequirement `json:"requirements"`
 }
 
+type ReportMutations struct {
+	Entries      []domain.MutationEntry   `json:"entries"`
+	Flags        []domain.SevenTwelveFlag `json:"flags"`
+	YearsCovered int                      `json:"years_covered"`
+	ConfirmedBy  string                   `json:"confirmed_by"`
+	ConfirmedAt  time.Time                `json:"confirmed_at"`
+}
+
+type ReportESZ struct {
+	Name       string `json:"name"`
+	SONumber   string `json:"so_number"`
+	NotifiedOn string `json:"notified_on"`
+	Status     string `json:"status"` // final | draft
+	SourceURL  string `json:"source_url"`
+	Summary    string `json:"summary"`
+	Listed     bool   `json:"listed"`
+	Coverage   string `json:"coverage,omitempty"`  // full | partial
+	Exact      bool   `json:"exact"`               // false: spelling differs slightly, a person confirms
+	ListedAs   string `json:"listed_as,omitempty"` // village as spelled in the notification
+}
+
 type ReportSevenTwelve struct {
 	Data        domain.SevenTwelve       `json:"data"`
 	Flags       []domain.SevenTwelveFlag `json:"flags"`
@@ -167,11 +194,23 @@ type DueDiligenceReportUsecase struct {
 	infra   InfrastructureForParcel // optional
 	drafter ReportVerdictDrafter    // optional
 	records LandRecordGetter        // optional: the parcel's confirmed 7/12
+	esz     ESZSource               // optional: eco-sensitive zone village lists
 	now     func() time.Time
+}
+
+type ESZSource interface {
+	ForDistrict(ctx context.Context, district string) ([]domain.ESZNotification, []domain.ESZVillage, error)
+}
+
+// WithESZ adds the eco-sensitive zone check to every composed report.
+func (u *DueDiligenceReportUsecase) WithESZ(src ESZSource) *DueDiligenceReportUsecase {
+	u.esz = src
+	return u
 }
 
 type LandRecordGetter interface {
 	GetByLandParcel(ctx context.Context, parcelID uuid.UUID) (*domain.LandRecord, error)
+	GetMutations(ctx context.Context, parcelID uuid.UUID) (*domain.LandMutations, error)
 }
 
 func NewDueDiligenceReportUsecase(reports DueDiligenceReportRepository, parcels ParcelGetter, legal LegalCheckGetter,
@@ -491,6 +530,31 @@ func (u *DueDiligenceReportUsecase) compose(ctx context.Context, r *domain.DueDi
 		s.SevenTwelve = st
 	}
 
+	if u.records != nil {
+		if m, err := u.records.GetMutations(ctx, r.LandParcelID); err == nil {
+			s.Mutations = &ReportMutations{Entries: m.Data.SortedEntries(), Flags: m.Data.Flags(u.now()),
+				YearsCovered: m.Data.YearsCovered(u.now()), ConfirmedBy: m.ConfirmedBy, ConfirmedAt: m.ConfirmedAt}
+		} else if !errors.Is(err, domain.ErrNotFound) {
+			log.Printf("report %s: mutations: %v", r.ID, err)
+		}
+	}
+
+	s.ESZ = []ReportESZ{}
+	if u.esz != nil && s.District != "" && s.Taluka != "" && s.Village != "" {
+		if ns, vs, err := u.esz.ForDistrict(ctx, s.District); err == nil {
+			for _, r := range domain.CheckESZ(ns, vs, s.District, s.Taluka, s.Village) {
+				s.ESZ = append(s.ESZ, ReportESZ{
+					Name: r.Notification.Name, SONumber: r.Notification.SONumber,
+					NotifiedOn: r.Notification.NotifiedOn.Format("2 Jan 2006"), Status: r.Notification.Status,
+					SourceURL: r.Notification.SourceURL, Summary: r.Notification.Summary,
+					Listed: r.Listed, Coverage: r.Coverage, Exact: r.Exact, ListedAs: r.ListedAs,
+				})
+			}
+		} else {
+			log.Printf("report %s: ESZ check: %v", r.ID, err)
+		}
+	}
+
 	s.Requirements = reportRequirements(s)
 	return s, nil
 }
@@ -514,7 +578,11 @@ func reportRequirements(s *ReportSections) []ReportRequirement {
 	if s.SevenTwelve == nil {
 		add("A", "7/12 extract, read and checked", "Photo of the 7/12; our team gets a signed copy from Mahabhumi if needed", "team", true)
 	}
-	if len(s.TitleChain) == 0 {
+	if s.Mutations != nil && s.Mutations.YearsCovered < domain.TitleSearchYears {
+		add("B", fmt.Sprintf("Older records to complete %d years (the register goes back %d)", domain.TitleSearchYears, s.Mutations.YearsCovered),
+			"Older mutation entries, old 7/12s, or Index-II at the Sub-Registrar", "advocate", false)
+	}
+	if len(s.TitleChain) == 0 && s.Mutations == nil {
 		add("B", "Owners over the last 30 years", "Mutation register (Ferfar) and Index-II at the Sub-Registrar", "advocate", false)
 	}
 
@@ -531,6 +599,9 @@ func reportRequirements(s *ReportSections) []ReportRequirement {
 			src, who, quick := documentSource(d.DocumentType)
 			if s.SevenTwelve != nil && strings.Contains(d.DocumentType, "7/12") {
 				continue // read and confirmed on the parcel
+			}
+			if s.Mutations != nil && (strings.Contains(strings.ToLower(d.DocumentType), "mutation") || strings.Contains(strings.ToLower(d.DocumentType), "ferfar")) {
+				continue
 			}
 			add("C", d.DocumentType, src, who, quick)
 		}
@@ -551,7 +622,17 @@ func reportRequirements(s *ReportSections) []ReportRequirement {
 		add("D", "Tenancy and other rights", "7/12, other rights column (इतर हक्क)", "team", true)
 	}
 	if s.CRZForestESZ == "" {
-		add("D", "Coastal, forest and eco-sensitive zone", "MCZMA coastal maps and the ESZ gazette notifications", "team", true)
+		if len(s.ESZ) > 0 {
+			// The ESZ village lists were checked automatically; coastal and forest still need a person.
+			add("D", "Coastal zone (CRZ) and forest boundary", "MCZMA coastal zone maps and the forest department", "team", true)
+		} else {
+			add("D", "Coastal, forest and eco-sensitive zone", "MCZMA coastal maps and the ESZ gazette notifications", "team", true)
+		}
+	}
+	for _, e := range s.ESZ {
+		if e.Listed && !e.Exact {
+			add("D", "Confirm the village is the one in the "+e.Name+" list (spelled \""+e.ListedAs+"\")", e.SONumber+", "+e.SourceURL, "team", true)
+		}
 	}
 	if s.DPReservation == "" {
 		add("D", "Reservation on the plot (road, garden, school…)", "Zone certificate from the planning authority", "team", false)

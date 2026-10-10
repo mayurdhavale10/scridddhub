@@ -51,8 +51,8 @@ type RERASellerHistory struct {
 	// ProjectsComplete is true once a statewide collection has finished, so the project count
 	// can be called a total rather than "found so far".
 	ProjectsComplete bool
-	ProjectsAsOf   *time.Time
-	ComplaintsAsOf *time.Time
+	ProjectsAsOf     *time.Time
+	ComplaintsAsOf   *time.Time
 }
 
 var (
