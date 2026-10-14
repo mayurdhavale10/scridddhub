@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -12,6 +13,13 @@ import (
 
 type LandParcelHandler struct {
 	usecase *usecase.LandParcelUsecase
+	queue   *usecase.RecordQueueUsecase // optional: queues the 7/12 when land details are saved
+}
+
+// WithRecordQueue queues a parcel's 7/12 for fetching whenever its land details are saved.
+func (h *LandParcelHandler) WithRecordQueue(q *usecase.RecordQueueUsecase) *LandParcelHandler {
+	h.queue = q
+	return h
 }
 
 func NewLandParcelHandler(u *usecase.LandParcelUsecase) *LandParcelHandler {
@@ -306,6 +314,11 @@ func (h *LandParcelHandler) SetLandRecord(w http.ResponseWriter, r *http.Request
 		}
 		writeError(w, http.StatusBadRequest, err)
 		return
+	}
+	if h.queue != nil {
+		if err := h.queue.EnqueueParcel(r.Context(), actor, parcel); err != nil {
+			log.Printf("parcel %s: queueing 7/12: %v", parcel.ID, err)
+		}
 	}
 	writeJSON(w, http.StatusOK, toLandParcelResponse(parcel))
 }

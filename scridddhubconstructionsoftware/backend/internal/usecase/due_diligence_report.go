@@ -523,7 +523,7 @@ func (u *DueDiligenceReportUsecase) compose(ctx context.Context, r *domain.DueDi
 				"Survey number on the 7/12 (%s) doesn't match the one given for this parcel (%s). Make sure it's the right land.",
 				rec.Data.SurveyNumber, *p.SurveyNumber)}}, st.Flags...)
 		}
-		if sqm, err := domain.ParseHectareAre(rec.Data.TotalAreaHR); err == nil && sqm > 0 {
+		if sqm, err := rec.Data.AreaSqm(); err == nil && sqm > 0 {
 			a := sqm / domain.SqmPerAcre
 			st.AreaAcres = &a
 		}

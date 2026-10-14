@@ -489,6 +489,68 @@ paths:
         "503":
           description: Reading isn't configured
 
+  /land-parcels/{id}/seven-twelve/read-text:
+    post:
+      operationId: readSevenTwelveText
+      summary: Read a 7/12 from the text of a Bhulekh page opened in the app (nothing is saved)
+      description: >-
+        The person opens Bhulekh inside the app and types the captcha themselves; once the record is
+        on screen the app sends the page's text. Only pages from mahabhumi.gov.in are accepted. The
+        result is never treated as the digitally signed copy.
+      parameters:
+        - $ref: "#/components/parameters/LandParcelId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text, source_url]
+              properties:
+                text: { type: string }
+                source_url: { type: string }
+      responses:
+        "200":
+          description: Draft
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SevenTwelveDraft"
+        "422":
+          description: Not a 7/12 page yet, or not from mahabhumi.gov.in
+
+  /land-parcels/{id}/seven-twelve/read-pdf:
+    post:
+      operationId: readSevenTwelvePDF
+      summary: Read a signed 7/12 PDF bought from Digital Satbara (nothing is saved)
+      description: >-
+        The body is the PDF as downloaded (about 85 KB). Its text layer is in a legacy font, so the
+        page is rendered and read with Tesseract, then rules set the area and its unit, tenure, NA
+        status and the signature's verification number. The file name Digital Satbara gives the
+        download ("<village>_<survey with # for />_Satbara.pdf") supplies the exact survey number.
+      parameters:
+        - $ref: "#/components/parameters/LandParcelId"
+        - name: filename
+          in: query
+          required: false
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/pdf:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: Draft
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SevenTwelveDraft"
+        "422":
+          description: Not a 7/12 PDF
+        "503":
+          description: Tesseract or pdftoppm isn't installed on the server
+
   /land-parcels/{id}/seven-twelve:
     get:
       operationId: getSevenTwelve
@@ -3353,7 +3415,13 @@ components:
           enum: ["", class_1, class_2, govt_lease]
         total_area_hr:
           type: string
-          description: As written on the 7/12, hectare.are(.sqm), e.g. "1.23.45"
+          description: As written on the 7/12, in area_unit, e.g. "1.23.45"
+        area_unit:
+          type: string
+          enum: ["", hectare, are]
+          description: >-
+            The unit the 7/12 prints. hectare (or empty) is हे.आर.चौ.मी; are is आर.चौ.मी, used for NA
+            land, where "11.60.00" means 1,160 sq m.
         pot_kharaba: { type: string }
         owners:
           type: array
@@ -3368,6 +3436,10 @@ components:
         last_mutation: { type: string }
         is_na: { type: boolean }
         digitally_signed: { type: boolean }
+        verification_no:
+          type: string
+          description: For a signed copy, the number to verify it on digitalsatbara.mahabhumi.gov.in/dslr
+        signed_on: { type: string, description: "Date the copy was digitally signed, as printed" }
         notes: { type: string }
 
     SevenTwelveFlag:

@@ -442,7 +442,7 @@ export function ReportScreen({ reportId, onBack, onOpenLegalCheck, onOpenSevenTw
         <Pressable onPress={final ? undefined : onOpenSevenTwelve}>
           <Row label="7/12 extract" last
             value={s.seven_twelve ? `Checked ${day(s.seven_twelve.confirmed_at)}` : TO_COLLECT}
-            sub={final ? undefined : s.seven_twelve ? 'Tap to read a newer one' : 'Tap to add a photo; the AI reads it, you check it'} />
+            sub={final ? undefined : s.seven_twelve ? 'Tap to read a newer one' : 'Tap to add the signed PDF or a photo; it’s read for you, you check it'} />
         </Pressable>
       </Section>
 
@@ -456,8 +456,13 @@ export function ReportScreen({ reportId, onBack, onOpenLegalCheck, onOpenSevenTw
           ))}
           <View style={styles.card}>
             <Row label="Tenure" value={s.seven_twelve.data.tenure === 'class_2' ? 'Class II' : s.seven_twelve.data.tenure === 'class_1' ? 'Class I' : s.seven_twelve.data.tenure === 'govt_lease' ? 'Govt. lease' : TO_COLLECT} />
-            <Row label="Area on the 7/12" value={`${s.seven_twelve.data.total_area_hr} ha`}
+            <Row label="Area on the 7/12" value={`${s.seven_twelve.data.total_area_hr} ${s.seven_twelve.data.area_unit === 'are' ? 'are.sq m' : 'ha'}`}
               sub={s.seven_twelve.area_acres != null ? `${s.seven_twelve.area_acres.toFixed(2)} acres` : undefined} />
+            {s.seven_twelve.data.is_na ? <Row label="Use" value="Non-agricultural (NA)" /> : null}
+            {s.seven_twelve.data.verification_no ? (
+              <Row label="Signed copy" value={s.seven_twelve.data.signed_on ? `Signed ${s.seven_twelve.data.signed_on}` : 'Signed'}
+                sub={`Verify no. ${s.seven_twelve.data.verification_no} at digitalsatbara.mahabhumi.gov.in`} />
+            ) : null}
             {s.seven_twelve.data.owners.filter(o => !o.former).map((o, i) => (
               <Row key={i} label={o.name} sub={o.mutation_no ? `Holder · mutation ${o.mutation_no}` : 'Holder'} value={o.area_hr ? `${o.area_hr} ha` : undefined} />
             ))}

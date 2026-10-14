@@ -1,9 +1,14 @@
 package usecase
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -33,9 +38,160 @@ type LandRecordRepository interface {
 type LandRecordUsecase struct {
 	repo    LandRecordRepository
 	parcels ParcelGetter
-	reader  SevenTwelveReader // optional
-	ferfar  FerfarReader      // optional
+	reader  SevenTwelveReader     // optional
+	ferfar  FerfarReader          // optional
+	text    SevenTwelveTextReader // optional
+	pdf     SignedPDFText         // optional
 	now     func() time.Time
+}
+
+// SevenTwelveTextReader is implemented by internal/llm (a text model).
+type SevenTwelveTextReader interface {
+	ReadSevenTwelveText(ctx context.Context, text string) (*domain.SevenTwelve, string, error)
+}
+
+// WithTextReader enables reading the text of a 7/12 opened on Bhulekh inside the app.
+func (u *LandRecordUsecase) WithTextReader(r SevenTwelveTextReader) *LandRecordUsecase {
+	u.text = r
+	return u
+}
+
+// ErrNotSevenTwelvePage: the page taken from Bhulekh doesn't look like a 7/12 yet.
+var ErrNotSevenTwelvePage = errors.New("this page doesn't show a 7/12 yet: open the record (after the captcha) and try again, or take a screenshot and use Choose from gallery")
+
+// ReadText reads a 7/12 from the text of a Bhulekh page the person opened in the app after typing
+// the captcha themselves. Nothing is saved; the draft goes through the same check-and-confirm step.
+func (u *LandRecordUsecase) ReadText(ctx context.Context, parcelID uuid.UUID, text, sourceURL string) (*SevenTwelveDraft, error) {
+	if u.text == nil {
+		return nil, ErrReaderUnavailable
+	}
+	text, err := checkBhulekhPage(text, sourceURL)
+	if err != nil {
+		return nil, err
+	}
+	p, err := u.parcels.Get(ctx, parcelID)
+	if err != nil {
+		return nil, err
+	}
+	data, model, err := readBhulekhText(ctx, u.text, text, sourceURL)
+	if err != nil {
+		return nil, err
+	}
+	return &SevenTwelveDraft{Data: *data, Flags: data.Flags(p.AreaAcres), ReadBy: model}, nil
+}
+
+// SignedPDFText is implemented by internal/ocr: the page text of a signed 7/12 PDF.
+type SignedPDFText interface {
+	Text(ctx context.Context, pdf []byte) (string, error)
+}
+
+// WithSignedPDF enables reading signed 7/12 PDFs bought from Digital Satbara.
+func (u *LandRecordUsecase) WithSignedPDF(r SignedPDFText) *LandRecordUsecase {
+	u.pdf = r
+	return u
+}
+
+// MaxSignedPDFBytes: a Digital Satbara 7/12 is about 85 KB; anything near this isn't one.
+const MaxSignedPDFBytes = 5 << 20
+
+// Digital Satbara names its downloads "<village>_<survey with / as #>_Satbara.pdf", e.g.
+// "वरप_42#3_Satbara.pdf". The survey number there is exact; OCR of the page can slip.
+var reSatbaraFile = regexp.MustCompile(`^(.+)_(.+)_Satbara\.pdf$`)
+
+// ReadSignedPDF reads a signed 7/12 PDF from Digital Satbara into a draft. The page is OCR'd, the
+// text reader structures it, and rules then set the fields they read reliably (unit, area,
+// tenure, NA, signature). Nothing is saved; the draft goes through check-and-confirm.
+func (u *LandRecordUsecase) ReadSignedPDF(ctx context.Context, parcelID uuid.UUID, pdf []byte, filename string) (*SevenTwelveDraft, error) {
+	if u.pdf == nil || u.text == nil {
+		return nil, ErrReaderUnavailable
+	}
+	if len(pdf) == 0 || len(pdf) > MaxSignedPDFBytes || !bytes.HasPrefix(pdf, []byte("%PDF")) {
+		return nil, fmt.Errorf("upload the 7/12 PDF downloaded from Digital Satbara (under %d MB)", MaxSignedPDFBytes>>20)
+	}
+	p, err := u.parcels.Get(ctx, parcelID)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := u.pdf.Text(ctx, pdf)
+	if err != nil {
+		return nil, fmt.Errorf("reading the PDF: %w", err)
+	}
+	if !strings.Contains(raw, "भोगवटादार") && !strings.Contains(raw, "भूमापन") && !strings.Contains(raw, "गाव नमुना") {
+		return nil, ErrNotSevenTwelvePage
+	}
+	data, model, err := u.text.ReadSevenTwelveText(ctx, "OCR text of a digitally signed 7/12 PDF, read region by region (OCR slips are possible, especially in digits):\n"+raw)
+	if err != nil {
+		return nil, fmt.Errorf("reading the 7/12: %w", err)
+	}
+	var notes []string
+	if m := reSatbaraFile.FindStringSubmatch(filepath.Base(filename)); m != nil {
+		survey := strings.ReplaceAll(m[2], "#", "/")
+		if survey != data.SurveyNumber {
+			notes = append(notes, "survey number "+survey+" taken from the file name")
+		}
+		data.SurveyNumber = survey
+	}
+	if fixed := data.ApplySignedCopyText(raw); len(fixed) > 0 {
+		notes = append(notes, "read by rules: "+strings.Join(fixed, "; "))
+	}
+	data.OtherRights = cleanOtherRights(data.OtherRights)
+	if !data.DigitallySigned {
+		notes = append(notes, "no Digital Satbara verification number found on the page")
+	}
+	data.Notes = strings.TrimSpace(strings.Join(append(notes, data.Notes), ". "))
+	return &SevenTwelveDraft{Data: *data, Flags: data.Flags(p.AreaAcres), ReadBy: model + " + tesseract"}, nil
+}
+
+// cleanOtherRights drops entries that are only area lines from the next column (OCR runs the
+// table's columns together), e.g. "बिन शोती ११.६०.००".
+func cleanOtherRights(in []string) []string {
+	out := []string{}
+	for _, r := range in {
+		if reAreaOnly.MatchString(strings.TrimSpace(r)) {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+var reAreaOnly = regexp.MustCompile(`^(बिन\s*श[ेो]ती|जिरायत|बागायत|आकारणी|एकूण[^०-९0-9]*)?\s*[०-९0-9.]+$`)
+
+// checkBhulekhPage refuses pages from anywhere but mahabhumi.gov.in, and pages that don't show a
+// 7/12 yet, before any AI call. It returns the trimmed text.
+func checkBhulekhPage(text, sourceURL string) (string, error) {
+	if !isMahabhumiURL(sourceURL) {
+		return "", fmt.Errorf("the page must come from mahabhumi.gov.in, not %q", sourceURL)
+	}
+	text = strings.TrimSpace(text)
+	if len(text) > 200_000 {
+		text = text[:200_000]
+	}
+	// A 7/12 always names the holder column; without it the record isn't on screen yet.
+	if !strings.Contains(text, "भोगवटादार") && !strings.Contains(text, "भूमापन") && !strings.Contains(strings.ToLower(text), "occupant") {
+		return "", ErrNotSevenTwelvePage
+	}
+	return text, nil
+}
+
+// readBhulekhText reads a checked Bhulekh page. A Bhulekh view is never the signed copy.
+func readBhulekhText(ctx context.Context, r SevenTwelveTextReader, text, sourceURL string) (*domain.SevenTwelve, string, error) {
+	data, model, err := r.ReadSevenTwelveText(ctx, text)
+	if err != nil {
+		return nil, "", fmt.Errorf("reading the 7/12: %w", err)
+	}
+	data.DigitallySigned = false
+	data.Notes = strings.TrimSpace("Read from the Bhulekh view (" + sourceURL + "), which the site says is not for legal use. " + data.Notes)
+	return data, model, nil
+}
+
+func isMahabhumiURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") {
+		return false
+	}
+	h := strings.ToLower(u.Hostname())
+	return h == "mahabhumi.gov.in" || strings.HasSuffix(h, ".mahabhumi.gov.in")
 }
 
 // WithFerfarReader enables reading mutation register photos.

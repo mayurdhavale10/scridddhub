@@ -30,7 +30,10 @@ type SevenTwelve struct {
 	// Tenure (भूधारणा पद्धती): class_1, class_2, govt_lease, or "" when it can't be read.
 	Tenure      string `json:"tenure"`
 	TotalAreaHR string `json:"total_area_hr"` // as written, e.g. "1.23.45"
-	PotKharaba  string `json:"pot_kharaba,omitempty"`
+	// AreaUnit is the unit the 7/12 prints (क्षेत्राचे एकक): "" or AreaUnitHectare for हे.आर.चौ.मी,
+	// AreaUnitAre for आर.चौ.मी, which NA land uses ("11.60.00" there is 1,160 sq m, not 11 ha).
+	AreaUnit   string `json:"area_unit,omitempty"`
+	PotKharaba string `json:"pot_kharaba,omitempty"`
 
 	Owners           []SevenTwelveOwner `json:"owners"`
 	Tenants          string             `json:"tenants,omitempty"`       // कुळाचे नाव
@@ -39,8 +42,25 @@ type SevenTwelve struct {
 	LastMutation     string             `json:"last_mutation,omitempty"` // शेवटचा फेरफार क्रमांक व दिनांक
 	IsNA             bool               `json:"is_na"`                   // form 12 replaced by the NA note
 	DigitallySigned  bool               `json:"digitally_signed"`        // QR code / 16-digit verification number seen
+	// Set for a signed copy from Digital Satbara: the number to verify it with on
+	// digitalsatbara.mahabhumi.gov.in/dslr/, and the date it was signed (as printed).
+	VerificationNo string `json:"verification_no,omitempty"`
+	SignedOn       string `json:"signed_on,omitempty"`
 
 	Notes string `json:"notes,omitempty"` // anything the reader couldn't place, or couldn't read
+}
+
+const (
+	AreaUnitHectare = "hectare" // हे.आर.चौ.मी
+	AreaUnitAre     = "are"     // आर.चौ.मी
+)
+
+// AreaSqm is the total area in square metres, read in the unit the 7/12 prints.
+func (s *SevenTwelve) AreaSqm() (float64, error) {
+	if s.AreaUnit == AreaUnitAre {
+		return ParseAreSqm(s.TotalAreaHR)
+	}
+	return ParseHectareAre(s.TotalAreaHR)
 }
 
 // LandRecord is a confirmed 7/12 for a parcel.
@@ -64,8 +84,13 @@ func (s *SevenTwelve) Validate() error {
 	default:
 		return fmt.Errorf("invalid tenure: %q", s.Tenure)
 	}
+	switch s.AreaUnit {
+	case "", AreaUnitHectare, AreaUnitAre:
+	default:
+		return fmt.Errorf("invalid area unit: %q", s.AreaUnit)
+	}
 	if s.TotalAreaHR != "" {
-		if _, err := ParseHectareAre(s.TotalAreaHR); err != nil {
+		if _, err := s.AreaSqm(); err != nil {
 			return fmt.Errorf("total area: %w", err)
 		}
 	}
@@ -112,21 +137,46 @@ func ParseHectareAre(s string) (float64, error) {
 	return n[0]*10000 + n[1]*100 + n[2], nil
 }
 
+// ParseAreSqm reads an area printed in आर.चौ.मी (are and sq m), as NA land's 7/12 is: "11.60.00"
+// is 11 are 60.00 sq m = 1,160 sq m (the third part is hundredths of a sq m).
+func ParseAreSqm(s string) (float64, error) {
+	s = strings.TrimSpace(devanagariDigits.Replace(s))
+	parts := strings.Split(s, ".")
+	if len(parts) < 1 || len(parts) > 3 {
+		return 0, fmt.Errorf("can't read area %q (expected are.sqm or are.sqm.hundredths)", s)
+	}
+	n := make([]float64, 3)
+	for i, p := range parts {
+		v, err := strconv.Atoi(strings.TrimSpace(p))
+		if err != nil || v < 0 {
+			return 0, fmt.Errorf("can't read area %q", s)
+		}
+		if i > 0 && v >= 100 {
+			return 0, fmt.Errorf("area %q: sq m and hundredths parts must be below 100", s)
+		}
+		n[i] = float64(v)
+	}
+	return n[0]*100 + n[1] + n[2]/100, nil
+}
+
 // SameSurveyNumber compares survey numbers written different ways: "45/2A", "45/2/अ" and
 // "४५/२ अ" are the same land. Hissa letters अ ब क ड map to A B C D.
 func SameSurveyNumber(a, b string) bool {
-	norm := func(s string) string {
-		s = devanagariDigits.Replace(strings.ToUpper(s))
-		s = strings.NewReplacer("अ", "A", "ब", "B", "क", "C", "ड", "D", "इ", "E").Replace(s)
-		var out strings.Builder
-		for _, r := range s {
-			if (r >= '0' && r <= '9') || (r >= 'A' && r <= 'Z') {
-				out.WriteRune(r)
-			}
+	return SurveyKey(a) != "" && SurveyKey(a) == SurveyKey(b)
+}
+
+// SurveyKey is a survey number reduced to digits and hissa letters ("45/2/अ" → "452A"), the key
+// the land record cache is stored under.
+func SurveyKey(s string) string {
+	s = devanagariDigits.Replace(strings.ToUpper(s))
+	s = strings.NewReplacer("अ", "A", "ब", "B", "क", "C", "ड", "D", "इ", "E").Replace(s)
+	var out strings.Builder
+	for _, r := range s {
+		if (r >= '0' && r <= '9') || (r >= 'A' && r <= 'Z') {
+			out.WriteRune(r)
 		}
-		return out.String()
 	}
-	return norm(a) != "" && norm(a) == norm(b)
+	return out.String()
 }
 
 var devanagariDigits = strings.NewReplacer("०", "0", "१", "1", "२", "2", "३", "3", "४", "4", "५", "5", "६", "6", "७", "7", "८", "8", "९", "9")
@@ -156,6 +206,10 @@ func (s *SevenTwelve) Flags(parcelAreaAcres *float64) []SevenTwelveFlag {
 	for _, r := range s.OtherRights {
 		l := strings.ToLower(r)
 		switch {
+		case strings.HasPrefix(r, NAPermissionPrefix):
+			continue // a permission granted, not a burden
+		case strings.Contains(r, "तुकडा"):
+			add("medium", "Fragment (तुकडा) entry: "+r+". Check the land meets the minimum holding size for the intended use, or that the restriction no longer applies.")
 		case strings.Contains(r, "बोजा") || strings.Contains(l, "bank") || strings.Contains(l, "loan") || strings.Contains(r, "कर्ज"):
 			add("high", "Charge on the land (बोजा): "+r)
 		case strings.Contains(r, "संपादन") || strings.Contains(l, "acquisition"):
@@ -184,7 +238,7 @@ func (s *SevenTwelve) Flags(parcelAreaAcres *float64) []SevenTwelveFlag {
 		add("medium", fmt.Sprintf("%d current holders: every one of them must sign the sale.", current))
 	}
 	if parcelAreaAcres != nil && s.TotalAreaHR != "" {
-		if sqm, err := ParseHectareAre(s.TotalAreaHR); err == nil && sqm > 0 {
+		if sqm, err := s.AreaSqm(); err == nil && sqm > 0 {
 			recAcres := sqm / sqmPerAcre
 			if diff := (recAcres - *parcelAreaAcres) / *parcelAreaAcres; diff > 0.05 || diff < -0.05 {
 				add("medium", fmt.Sprintf("Area on the 7/12 is %.2f acres, but the parcel was entered as %.2f acres.", recAcres, *parcelAreaAcres))

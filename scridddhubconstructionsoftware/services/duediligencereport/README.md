@@ -255,6 +255,83 @@ records to complete 30 years" when the register is shorter.
 
 **Accuracy on real registers is untested**, and handwritten older entries will be harder.
 
+### 9. Getting the 7/12 from Bhulekh inside the app (a person types the captcha)
+On the 7/12 screen, **"Open Bhulekh (you type the captcha)"** opens bhulekh.mahabhumi.gov.in in
+an in-app browser, with the parcel's survey number and village shown as a hint.
+1. The person picks district, taluka and village, enters the survey number, and **types the
+   captcha themselves**.
+2. When the 7/12 shows, they tap **"Use this 7/12"**.
+3. The app takes the page's visible text (`document.body.innerText`) and sends it to
+   `POST /land-parcels/{id}/seven-twelve/read-text`.
+4. A text model (gpt-oss-120b) fills the same draft, which is checked and confirmed as before.
+
+**Rules:**
+- **No captcha automation:** the owner decided against solving services (2026-10-10). The app
+  never fills in or submits the captcha.
+- Only pages from `mahabhumi.gov.in` are accepted.
+- A page that doesn't show a 7/12 yet is refused before any AI call (`ErrNotSevenTwelvePage`).
+- **Never treated as the signed copy:** Bhulekh says its pages aren't for legal use, so
+  `digitally_signed` is forced to false and the note records the source. The report's flag still
+  asks for the ₹15 signed copy.
+- **If Bhulekh shows the 7/12 as an image** rather than text, the app says so: take a phone
+  screenshot and use "Choose from gallery" (the photo reader).
+
+**Tested 2026-10-11 on Nilaje 1/1/अ:** Bhulekh now shows the 7/12 as a JPEG (no text), under
+"VIEW ONLY" watermarks. Neither the vision model nor Tesseract read the holders' names right
+reliably from it. The free view is good for a person to look at, not for the app to read.
+
+## Added 2026-10-14
+
+### 10. The signed 7/12 PDF from Digital Satbara
+The copy lawyers and banks use. A person buys it on **digitalsatbara.mahabhumi.gov.in** (OTP
+login, wallet top-up through SBI ePay, **₹15 per 7/12**, choose **अंकित सातबारा**) and uploads it on
+the 7/12 screen with **"Upload signed 7/12 PDF (Digital Satbara)"**. It goes to
+`POST /land-parcels/{id}/seven-twelve/read-pdf?filename=…`.
+
+```mermaid
+flowchart LR
+    PDF[Signed 7/12 PDF<br/>about 85 KB] --> R[pdftoppm<br/>page 1 at 200 dpi]
+    R --> T[Tesseract<br/>Marathi + English]
+    T --> L[Text model<br/>drafts the fields]
+    T --> G[Go rules<br/>override what they read reliably]
+    F[File name<br/>वरप_42#3_Satbara.pdf] --> G
+    L --> D[Draft]
+    G --> D
+    D --> P[Person checks against the PDF<br/>and confirms]
+```
+
+**Why it's read this way:**
+- The PDF's own text layer is in a legacy (non-Unicode) Marathi font: copying it out gives
+  gibberish. The printed page is clean, so it's rendered and read with Tesseract, run locally.
+- **200 dpi** is deliberate. At 150, 250 and 300 dpi Tesseract misread the survey number, digits
+  or a surname on the test page; at 200 it read them exactly.
+- No black-and-white clean-up: it helps on Bhulekh's watermarked JPEG but breaks the thin strokes
+  of Marathi letters on this clean print.
+
+**Read by rules, not the AI** (`domain/seven_twelve_signed.go`). The AI drafts the rest; these
+override it because the AI was seen getting them wrong:
+
+| Field | Rule |
+|---|---|
+| Survey number | From the file name Digital Satbara gives the download (`<village>_<survey, # for />_Satbara.pdf`) |
+| Area unit | आर.चौ.मी → `are`; हे.आर.चौ.मी → `hectare`. **NA land uses आर.चौ.मी**: "11.60.00" is 1,160 sq m, not 11 ha |
+| Total area | The holders' common-area line ("सामाईक क्षेत्र ११.६०.००"), else the column totals. The AI took the assessment (३७६.००) instead |
+| Tenure | "भोगवटादार वर्ग-१/२". Tesseract reads १ as 9 |
+| NA | "अकृषिक वापर" or "बिन शेती" on the page |
+| Other rights | The NA order (recorded as a permission, not a concern) and "तुकडा (…)". The AI listed them differently each run |
+| Tenant | Cleared if it's a holder's name. OCR runs a name into the "कुळाचे नाव" heading |
+| Signed | The 16-digit verification number and signing date from the footer |
+
+**Tested on Varap 42/3, Kalyan (signed 20/06/2022, bought 2026-10-14), three runs, all identical:**
+survey 42/3, वरप, Class 1, 11.60.00 are (1,160 sq m), NA, holders कमलाकर परशराम कोंगरे and दिलीप
+परशराम कोंगरे (mutation १०९०), no pending mutations, last mutation १०९० on १९/०७/२०२१, the NA order
+SR-10/2019, verification no. 2112100001134296. **Missed:** the "तुकडा (९९)" entry wasn't readable
+at 200 dpi; the person adds it when checking.
+
+**Needs on the server:** Tesseract with `mar.traineddata` (tessdata_best) and poppler's
+`pdftoppm`. Paths: `TESSERACT_BIN`, `TESSDATA_DIR`, `PDFTOPPM_BIN`. If either is missing the server
+logs it and the endpoint returns 503.
+
 ## Life of a report
 
 ```mermaid

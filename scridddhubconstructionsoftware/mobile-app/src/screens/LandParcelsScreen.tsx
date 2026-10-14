@@ -49,6 +49,7 @@ function formatSpecs(areaAcres: number | null | undefined, costRupees: number | 
 type Props = {
   onSelectParcel: (parcelId: string) => void;
   onSeeAuditTrail: () => void;
+  onOpenRecords: () => void;
   onAddParcel: () => void;
   onCompareParcels: (parcelIds: string[]) => void;
 };
@@ -56,6 +57,7 @@ type Props = {
 export function LandParcelsScreen({
   onSelectParcel,
   onSeeAuditTrail,
+  onOpenRecords,
   onAddParcel,
   onCompareParcels,
 }: Props) {
@@ -161,6 +163,9 @@ export function LandParcelsScreen({
           {/* Always visible: "Select" normally, "Cancel" while selecting (owner, 2026-10-03). */}
           <Pressable onPress={selectMode ? cancelSelectMode : () => enterSelectMode()}>
             <Text style={styles.auditLink}>{selectMode ? 'Cancel' : 'Select'}</Text>
+          </Pressable>
+          <Pressable onPress={onOpenRecords}>
+            <Text style={styles.auditLink}>Records</Text>
           </Pressable>
           <Pressable onPress={onSeeAuditTrail}>
             <Text style={styles.auditLink}>Audit Trail</Text>

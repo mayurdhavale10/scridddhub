@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	infrasetup "github.com/scridddhub/backend/internal/infrapipeline/setup"
 	"github.com/scridddhub/backend/internal/llm"
 	"github.com/scridddhub/backend/internal/middleware"
+	"github.com/scridddhub/backend/internal/ocr"
 	"github.com/scridddhub/backend/internal/osm"
 	"github.com/scridddhub/backend/internal/repository/postgres"
 	"github.com/scridddhub/backend/internal/usecase"
@@ -78,7 +80,11 @@ func main() {
 	infrastructureProjectRepo := postgres.NewInfrastructureProjectRepository(pool)
 
 	projectHandler := handler.NewProjectHandler(usecase.NewProjectUsecase(projectRepo))
-	landParcelHandler := handler.NewLandParcelHandler(usecase.NewLandParcelUsecase(landParcelRepo))
+	// Land records fetched once and reused: the lookup queue and the survey-number cache.
+	recordQueueUC := usecase.NewRecordQueueUsecase(postgres.NewRecordQueueRepository(pool), landParcelRepo, llm.NewGroqSevenTwelveTextReader(groqAPIKey)).
+		WithImageReader(llm.NewGroqSevenTwelveReader(groqAPIKey))
+	recordQueueHandler := handler.NewRecordQueueHandler(recordQueueUC)
+	landParcelHandler := handler.NewLandParcelHandler(usecase.NewLandParcelUsecase(landParcelRepo)).WithRecordQueue(recordQueueUC)
 	feasibilityAssessmentHandler := handler.NewFeasibilityAssessmentHandler(usecase.NewFeasibilityAssessmentUsecase(feasibilityAssessmentRepo))
 	legalCheckHandler := handler.NewLegalCheckHandler(usecase.NewLegalCheckUsecase(legalCheckRepo))
 	governmentApprovalHandler := handler.NewGovernmentApprovalHandler(usecase.NewGovernmentApprovalUsecase(governmentApprovalRepo, siteExtractor))
@@ -145,7 +151,8 @@ func main() {
 	// A parcel's 7/12: the AI reads a photo into a draft, a person confirms it.
 	landRecordRepo := postgres.NewLandRecordRepository(pool)
 	landRecordHandler := handler.NewLandRecordHandler(usecase.NewLandRecordUsecase(
-		landRecordRepo, landParcelRepo, llm.NewGroqSevenTwelveReader(groqAPIKey)).WithFerfarReader(llm.NewGroqFerfarReader(groqAPIKey)))
+		landRecordRepo, landParcelRepo, llm.NewGroqSevenTwelveReader(groqAPIKey)).WithFerfarReader(llm.NewGroqFerfarReader(groqAPIKey)).WithTextReader(llm.NewGroqSevenTwelveTextReader(groqAPIKey)).
+		WithSignedPDF(signedSevenTwelvePDF()))
 
 	reportHandler := handler.NewDueDiligenceReportHandler(usecase.NewDueDiligenceReportUsecase(
 		postgres.NewDueDiligenceReportRepository(pool), landParcelRepo, legalCheckRepo,
@@ -155,6 +162,13 @@ func main() {
 	mux.HandleFunc("POST /land-parcels/{id}/seven-twelve/read", landRecordHandler.Read)
 	mux.HandleFunc("PUT /land-parcels/{id}/seven-twelve", landRecordHandler.Confirm)
 	mux.HandleFunc("GET /land-parcels/{id}/seven-twelve", landRecordHandler.Get)
+	mux.HandleFunc("POST /land-parcels/{id}/seven-twelve/read-text", landRecordHandler.ReadText)
+	mux.HandleFunc("POST /land-parcels/{id}/seven-twelve/read-pdf", landRecordHandler.ReadPDF)
+	mux.HandleFunc("GET /land-parcels/{id}/seven-twelve/cached", recordQueueHandler.Cached)
+	mux.HandleFunc("GET /record-requests", recordQueueHandler.List)
+	mux.HandleFunc("POST /record-requests", recordQueueHandler.Enqueue)
+	mux.HandleFunc("POST /record-requests/{id}/result", recordQueueHandler.SaveResult)
+	mux.HandleFunc("POST /record-requests/{id}/status", recordQueueHandler.SetStatus)
 	mux.HandleFunc("POST /land-parcels/{id}/ferfar/read", landRecordHandler.ReadFerfar)
 	mux.HandleFunc("PUT /land-parcels/{id}/ferfar", landRecordHandler.ConfirmFerfar)
 	mux.HandleFunc("GET /land-parcels/{id}/ferfar", landRecordHandler.GetFerfar)
@@ -183,6 +197,7 @@ func main() {
 	// Free-text village search — powers a single search field on Screen 4.2 instead of three
 	// cascading district/taluka/village pickers.
 	mux.HandleFunc("GET /reference/geography/villages/search", geographyHandler.SearchVillages)
+	mux.HandleFunc("GET /reference/geography/local-names", geographyHandler.LocalNames)
 
 	// Estimate Value (services/estimatedparcelvalue): standalone, location-based valuation from
 	// Maharashtra Ready Reckoner Rate reference data — never a comparison against other parcels
@@ -309,4 +324,29 @@ func main() {
 	if err := http.ListenAndServe(addr, middleware.RequestLog(middleware.StubAuth(mux))); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// signedSevenTwelvePDF reads signed 7/12 PDFs with Tesseract and poppler's pdftoppm, both run
+// locally. Paths come from TESSERACT_BIN, TESSDATA_DIR (holding mar.traineddata) and PDFTOPPM_BIN,
+// defaulting to where they're installed on the dev laptop. Returns nil (feature off) if missing.
+func signedSevenTwelvePDF() usecase.SignedPDFText {
+	envOr := func(k, def string) string {
+		if v := os.Getenv(k); v != "" {
+			return v
+		}
+		return def
+	}
+	r := ocr.SevenTwelvePDF{
+		Tesseract: ocr.Tesseract{
+			Bin:     envOr("TESSERACT_BIN", `C:\Program Files\Tesseract-OCR\tesseract.exe`),
+			DataDir: envOr("TESSDATA_DIR", filepath.Join(os.Getenv("LOCALAPPDATA"), "tessdata")),
+			Langs:   "mar+eng",
+		},
+		PdfToPPM: envOr("PDFTOPPM_BIN", filepath.Join(os.Getenv("LOCALAPPDATA"), "poppler", "bin", "pdftoppm.exe")),
+	}
+	if !r.Available() {
+		log.Printf("signed 7/12 PDF reading off: tesseract (with mar.traineddata) or pdftoppm not found")
+		return nil
+	}
+	return r
 }

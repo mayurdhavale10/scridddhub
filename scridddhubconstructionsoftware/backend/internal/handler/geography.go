@@ -85,3 +85,15 @@ func (h *GeographyHandler) SearchVillages(w http.ResponseWriter, r *http.Request
 		Results []villageMatchResponse `json:"results"`
 	}{Results: results})
 }
+
+// LocalNames handles GET /reference/geography/local-names?district=&taluka=&village=: the Marathi
+// names the state's own sites use, for filling their dropdowns.
+func (h *GeographyHandler) LocalNames(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	m, err := h.usecase.LocalNames(r.Context(), q.Get("district"), q.Get("taluka"), q.Get("village"))
+	if err != nil {
+		writeNotFoundOrError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, villageMatchResponse{District: m.District, Taluka: m.Taluka, Village: m.Village})
+}

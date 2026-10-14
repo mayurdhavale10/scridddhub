@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/scridddhub/backend/internal/domain"
 )
@@ -92,4 +93,20 @@ func (r *GeographyRepository) SearchVillages(ctx context.Context, query string) 
 		matches = append(matches, m)
 	}
 	return matches, rows.Err()
+}
+
+// LocalNames returns the Marathi names (name_local) of a district, taluka and village.
+func (r *GeographyRepository) LocalNames(ctx context.Context, district, taluka, village string) (domain.VillageMatch, error) {
+	var m domain.VillageMatch
+	err := r.pool.QueryRow(ctx, `
+		SELECT COALESCE(d.name_local, d.name), COALESCE(t.name_local, t.name), COALESCE(v.name_local, v.name)
+		FROM mh_villages v
+		JOIN mh_talukas t ON t.district_code = v.district_code AND t.code = v.taluka_code
+		JOIN mh_districts d ON d.code = v.district_code
+		WHERE lower(d.name) = lower($1) AND lower(t.name) = lower($2) AND lower(v.name) = lower($3)
+		LIMIT 1`, district, taluka, village).Scan(&m.District, &m.Taluka, &m.Village)
+	if err == pgx.ErrNoRows {
+		return m, domain.ErrNotFound
+	}
+	return m, err
 }

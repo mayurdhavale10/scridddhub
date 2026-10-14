@@ -97,12 +97,14 @@
 <table>
   <tr><td class="k">Survey / gat no. on the 7/12</td><td class="v mr">{{.Data.SurveyNumber}}</td></tr>
   <tr><td class="k">Tenure</td><td class="v">{{tenure .Data.Tenure}}</td></tr>
-  <tr><td class="k">Area</td><td class="v">{{.Data.TotalAreaHR}} ha{{if .AreaAcres}} <span class="src">({{f2 (deref .AreaAcres)}} acres)</span>{{end}}</td></tr>
+  <tr><td class="k">Area</td><td class="v">{{.Data.TotalAreaHR}} {{if eq .Data.AreaUnit "are"}}are.sq m{{else}}ha{{end}}{{if .AreaAcres}} <span class="src">({{f2 (deref .AreaAcres)}} acres)</span>{{end}}</td></tr>
+  {{if .Data.IsNA}}<tr><td class="k">Use</td><td class="v">Non-agricultural (NA)</td></tr>{{end}}
   {{range .Data.Owners}}{{if not .Former}}<tr><td class="k">Holder</td><td class="v mr">{{.Name}}{{if .MutationNo}} <span class="src">mutation {{.MutationNo}}</span>{{end}}{{if .AreaHR}} <span class="src">{{.AreaHR}} ha</span>{{end}}</td></tr>{{end}}{{end}}
   {{if .Data.Tenants}}<tr><td class="k">Tenant</td><td class="v mr">{{.Data.Tenants}}</td></tr>{{end}}
   {{range .Data.OtherRights}}<tr><td class="k">Other right</td><td class="v mr">{{.}}</td></tr>{{end}}
   {{if .Data.LastMutation}}<tr><td class="k">Last mutation</td><td class="v mr">{{.Data.LastMutation}}</td></tr>{{end}}
-  <tr><td class="k">Checked</td><td class="v">by {{.ConfirmedBy}}, {{dayv .ConfirmedAt}} <span class="src">(read from a photo, every field checked by a person)</span></td></tr>
+  {{if .Data.VerificationNo}}<tr><td class="k">Signed copy</td><td class="v">Digitally signed{{if .Data.SignedOn}} on {{.Data.SignedOn}}{{end}} <span class="src">(verify no. {{.Data.VerificationNo}} at digitalsatbara.mahabhumi.gov.in/dslr)</span></td></tr>{{end}}
+  <tr><td class="k">Checked</td><td class="v">by {{.ConfirmedBy}}, {{dayv .ConfirmedAt}} <span class="src">({{if .Data.VerificationNo}}read from the signed copy{{else}}read from a photo{{end}}, every field checked by a person)</span></td></tr>
 </table>
 {{end}}
 

@@ -17,6 +17,13 @@ type GeographyRepository interface {
 	ListTalukas(ctx context.Context, district string) ([]string, error)
 	ListVillages(ctx context.Context, district, taluka string) ([]string, error)
 	SearchVillages(ctx context.Context, query string) ([]domain.VillageMatch, error)
+	LocalNames(ctx context.Context, district, taluka, village string) (domain.VillageMatch, error)
+}
+
+// LocalNames returns the Marathi names of a village, its taluka and district, as the state's
+// own sites (Bhulekh) show them in their dropdowns.
+func (u *GeographyUsecase) LocalNames(ctx context.Context, district, taluka, village string) (domain.VillageMatch, error) {
+	return u.repo.LocalNames(ctx, district, taluka, village)
 }
 
 type GeographyUsecase struct {

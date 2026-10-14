@@ -57,6 +57,68 @@ func (h *LandRecordHandler) Read(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, draft)
 }
 
+type readTextRequest struct {
+	Text      string `json:"text"`
+	SourceURL string `json:"source_url"`
+}
+
+// ReadText handles POST /land-parcels/{id}/seven-twelve/read-text: the text of a 7/12 page the
+// person opened on Bhulekh in the app after typing the captcha. Returns a draft; nothing is saved.
+func (h *LandRecordHandler) ReadText(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	var req readTextRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	draft, err := h.usecase.ReadText(r.Context(), id, req.Text, req.SourceURL)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrNotFound):
+			writeNotFoundOrError(w, err)
+		case errors.Is(err, usecase.ErrReaderUnavailable):
+			writeError(w, http.StatusServiceUnavailable, err)
+		default:
+			writeError(w, http.StatusUnprocessableEntity, err)
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, draft)
+}
+
+// ReadPDF handles POST /land-parcels/{id}/seven-twelve/read-pdf?filename=…: the body is the
+// signed 7/12 PDF from Digital Satbara (Content-Type application/pdf). The file name it was
+// downloaded under carries the exact survey number. Returns a draft; nothing is saved.
+func (h *LandRecordHandler) ReadPDF(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	pdf, err := io.ReadAll(io.LimitReader(r.Body, usecase.MaxSignedPDFBytes+1))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	draft, err := h.usecase.ReadSignedPDF(r.Context(), id, pdf, r.URL.Query().Get("filename"))
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrNotFound):
+			writeNotFoundOrError(w, err)
+		case errors.Is(err, usecase.ErrReaderUnavailable):
+			writeError(w, http.StatusServiceUnavailable, err)
+		default:
+			writeError(w, http.StatusUnprocessableEntity, err)
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, draft)
+}
+
 type confirmLandRecordRequest struct {
 	Data   domain.SevenTwelve `json:"data"`
 	ReadBy string             `json:"read_by"`

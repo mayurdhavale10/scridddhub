@@ -33,6 +33,7 @@ import { ReportScreen } from './src/screens/ReportScreen';
 import { SevenTwelveScreen } from './src/screens/SevenTwelveScreen';
 import { AddSaleScreen } from './src/screens/AddSaleScreen';
 import { FerfarScreen } from './src/screens/FerfarScreen';
+import { FetchQueueScreen } from './src/screens/FetchQueueScreen';
 import { DEV_PROJECT_ID } from './src/config/devProject';
 
 // Tapping a parcel opens its hub (ParcelHubScreen): one card per screen, and Back from any of
@@ -70,6 +71,7 @@ type Route =
   | { name: 'tender'; parcelId: string }
   | { name: 'masterSchedule'; parcelId: string }
   | { name: 'auditTrail' }
+  | { name: 'records' }
   | { name: 'compareParcels'; parcelIds: string[] };
 
 // Where the phone's Back button goes: the same place each screen's ← goes. null = leave the app.
@@ -81,6 +83,7 @@ function parentOf(route: Route): Route | null {
     case 'parcelHub':
     case 'createParcel':
     case 'auditTrail':
+    case 'records':
     case 'compareParcels':
       return { name: 'list' };
     case 'report':
@@ -124,12 +127,14 @@ function App() {
           <LandParcelsScreen
             onSelectParcel={parcelId => setRoute({ name: 'parcelHub', parcelId })}
             onSeeAuditTrail={() => setRoute({ name: 'auditTrail' })}
+            onOpenRecords={() => setRoute({ name: 'records' })}
             onAddParcel={() => setRoute({ name: 'createParcel' })}
             onCompareParcels={parcelIds =>
               setRoute({ name: 'compareParcels', parcelIds })
             }
           />
         )}
+        {route.name === 'records' && <FetchQueueScreen onBack={() => setRoute({ name: 'list' })} />}
         {route.name === 'createParcel' && (
           <CreateLandParcelScreen
             onBack={() => setRoute({ name: 'list' })}
