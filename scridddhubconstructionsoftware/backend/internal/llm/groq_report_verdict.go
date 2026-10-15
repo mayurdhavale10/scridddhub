@@ -66,6 +66,43 @@ func reportVerdictUserMessage(s *usecase.ReportSections) string {
 	if s.AskingRupees != nil {
 		w("Asking price: Rs %d.", *s.AskingRupees)
 	}
+	if len(s.SevenTwelves) == 0 {
+		w("7/12: none checked yet, so holders, class and rights on the land are unknown.")
+	}
+	for _, st := range s.SevenTwelves {
+		d := st.Data
+		var holders []string
+		for _, o := range d.Owners {
+			if !o.Former {
+				holders = append(holders, o.Name)
+			}
+		}
+		signed := "not a signed copy"
+		if d.DigitallySigned {
+			signed = "digitally signed copy"
+			if d.SignedOn != "" {
+				signed += ", signed " + d.SignedOn
+			}
+		}
+		area := "unknown"
+		if st.AreaAcres != nil {
+			area = fmt.Sprintf("%.2f acres", *st.AreaAcres)
+		}
+		w("7/12 FOR SURVEY %s (checked by a person, %s): holders %s; tenure %s; area %s; NA %v; tenant %s; other rights %s; pending mutations %s; last mutation %s.",
+			d.SurveyNumber, signed, strings.Join(holders, ", "), orUnknown(d.Tenure), area, d.IsNA, orUnknown(d.Tenants),
+			orUnknown(strings.Join(d.OtherRights, "; ")), orUnknown(strings.Join(d.PendingMutations, "; ")), orUnknown(d.LastMutation))
+		for _, f := range st.Flags {
+			w("- WARNING (%s): %s", f.Level, f.Text)
+		}
+	}
+	if sum := s.SevenTwelveSummary; sum != nil && len(s.SevenTwelves) > 1 {
+		w("THE 7/12s TOGETHER: %d survey numbers, %d people must sign (%s).", len(s.SevenTwelves), len(sum.CurrentHolders), strings.Join(sum.CurrentHolders, ", "))
+		for _, f := range sum.Flags {
+			if strings.HasPrefix(f.Text, "No 7/12 yet") || strings.Contains(f.Text, "add up to") || strings.Contains(f.Text, "current holders across") {
+				w("- WARNING (%s): %s", f.Level, f.Text)
+			}
+		}
+	}
 	if !s.LegalCheckStarted {
 		w("B/C/F: the legal check has NOT been started, so title, searches and seller history are unknown.")
 	} else {

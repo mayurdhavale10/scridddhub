@@ -21,15 +21,17 @@ var (
 	reCommonArea = regexp.MustCompile(`सामाईक\s*क्षेत्र[-\s]*` + areaToken)
 	// Column 1 totals, for land without a common-area line.
 	reTotalArea = regexp.MustCompile(`एकूण\s*क्षेत्र\s*(?:\([^)]*\))?\s*` + areaToken)
-	reNAArea    = regexp.MustCompile(`बिन\s*श[ेो]ती\s*` + areaToken)
+	// OCR reads बिन शेती as "बिन शोती" or "बिन होती".
+	reNAArea = regexp.MustCompile(`बिन\s*[शह][ेो]ती\s*` + areaToken)
 	// "तुकडा ( ९९ )": the land was recorded as a fragment (Fragmentation Act), in mutation 99.
 	// OCR also reads the तु as छ or पु.
 	reTukda = regexp.MustCompile(`[तछप]ु?कडा\s*\(\s*([०-९0-9]+)\s*\)`)
 	// The NA order in the other-rights column, from its number to "परवानगी (mutation)".
 	reNAOrder = regexp.MustCompile(`(?s)(क्र\.?\s*महसुल.*?परवानगी\s*\(\s*[०-९0-9]+\s*\))`)
 	// Text from the area column that OCR runs into the other-rights column's lines.
-	// Also a stray mark of up to 3 characters before the column's border ("पिं [ची रहिवास").
-	reLeftColumn = regexp.MustCompile(`^(बिन\s*[शह][ेो]ती\s*[०-९0-9.,]*|आकारणी|[A-Za-z]{1,3}\s*[—-]+|\S{1,3}\s+[\[|])\s*`)
+	// Also a stray mark of up to 3 characters before the column's border ("पिं [ची रहिवास"), and
+	// "पिं", which the border itself is read as.
+	reLeftColumn = regexp.MustCompile(`^(बिन\s*[शह][ेो]ती\s*[०-९0-9.,]*|आकारणी|[A-Za-z]{1,3}\s*[—-]+|\S{1,3}\s+[\[|]|पिं\s+)\s*`)
 )
 
 // NAPermissionPrefix starts the other-rights entry that records an NA order. It's a permission,

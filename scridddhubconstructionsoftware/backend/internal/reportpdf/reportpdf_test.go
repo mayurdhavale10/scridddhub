@@ -25,9 +25,16 @@ func TestHTML_DraftAndSigned(t *testing.T) {
 		Valued:  true, ValueIndicative: true,
 		FixList: []string{"B: record the heirship mutation"},
 		Verdict: "fix_first", VerdictSummary: "Two papers missing.",
-		SevenTwelve: &usecase.ReportSevenTwelve{
+		SevenTwelves: []usecase.ReportSevenTwelve{{
 			Data:  domain.SevenTwelve{SurveyNumber: "45/2/अ", Tenure: "class_1", TotalAreaHR: "1.41.64", Owners: []domain.SevenTwelveOwner{{Name: "रामचंद्र पाटील", MutationNo: "1234"}}},
 			Flags: []domain.SevenTwelveFlag{{Level: "high", Text: "Charge on the land (बोजा)"}},
+		}, {
+			Data: domain.SevenTwelve{SurveyNumber: "45/3", Tenure: "class_1", AreaUnit: domain.AreaUnitAre, TotalAreaHR: "9.10.00", IsNA: true,
+				VerificationNo: "2112100001134298", SignedOn: "20/06/2022", Owners: []domain.SevenTwelveOwner{{Name: "भरत गजानन गोंधळे"}}},
+		}},
+		SevenTwelveSummary: &usecase.ReportSevenTwelveSummary{
+			Flags:          []domain.SevenTwelveFlag{{Level: "medium", Text: "2 current holders across the 2 survey numbers"}},
+			CurrentHolders: []string{"रामचंद्र पाटील", "भरत गजानन गोंधळे"}, Missing: []string{"45/4"},
 		},
 		Requirements: []usecase.ReportRequirement{{Section: "B", Item: "Owners over 30 years", Source: "Ferfar", Who: "advocate"}},
 		Mutations: &usecase.ReportMutations{YearsCovered: 25, ConfirmedBy: "team",
@@ -42,7 +49,8 @@ func TestHTML_DraftAndSigned(t *testing.T) {
 	}
 	page := string(draft)
 	for _, want := range []string{"DRAFT", "Still open: NA status", "Fix first, then buy", "45/2A", "रामचंद्र पाटील",
-		"Charge on the land", "Still to collect", "going back 25 years", "Inheritance", "not in this notification’s list", "1.1 base · up to 2", "3,04,920 sq ft", "no value is given", "Test &lt;plot&gt;"} {
+		"Charge on the land", "Still to collect", "The 7/12 extracts together", "Everyone who must sign", "45/4 <span class=\"src\">(no 7/12 yet)</span>",
+		"survey 45/3", "9.10.00 are.sq m", "Non-agricultural (NA)", "verify no. 2112100001134298", "going back 25 years", "Inheritance", "not in this notification’s list", "1.1 base · up to 2", "3,04,920 sq ft", "no value is given", "Test &lt;plot&gt;"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("draft page missing %q", want)
 		}

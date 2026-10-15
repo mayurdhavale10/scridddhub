@@ -13,6 +13,17 @@ import type { components } from '@scridddhub/api-client';
 type SevenTwelve = components['schemas']['SevenTwelve'];
 type Flag = components['schemas']['SevenTwelveFlag'];
 type Draft = components['schemas']['SevenTwelveDraft'];
+type SevenTwelveSet = components['schemas']['SevenTwelveSet'];
+
+// Same rule as the backend's SurveyKey: "42/4/2" and "४२/४/२" are the same land.
+const DEVANAGARI = '०१२३४५६७८९';
+const surveyKey = (s: string) =>
+  s
+    .toUpperCase()
+    .replace(/[०-९]/g, d => String(DEVANAGARI.indexOf(d)))
+    .replace(/[अबकडइ]/g, c => ({ अ: 'A', ब: 'B', क: 'C', ड: 'D', इ: 'E' } as Record<string, string>)[c])
+    .replace(/[^0-9A-Z]/g, '');
+const splitSurveys = (s?: string | null) => (s ?? '').split(/[,;\n]/).map(x => x.trim()).filter(Boolean);
 
 type Props = { parcelId: string; onBack: () => void };
 
@@ -50,7 +61,8 @@ function Field({ label, value, onChange, multiline }: { label: string; value: st
 
 export function SevenTwelveScreen({ parcelId, onBack }: Props) {
   const [loading, setLoading] = useState(true);
-  const [saved, setSaved] = useState<{ data: SevenTwelve; flags: Flag[]; confirmed_at: string } | null>(null);
+  const [saved, setSaved] = useState<SevenTwelveSet | null>(null);
+  const [surveys, setSurveys] = useState<string[]>([]);
   const [photo, setPhoto] = useState<Asset | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [data, setData] = useState<SevenTwelve | null>(null);
@@ -69,6 +81,7 @@ export function SevenTwelveScreen({ parcelId, onBack }: Props) {
       .then(({ data: d }) => d && setSaved(d))
       .finally(() => setLoading(false));
     api.GET('/land-parcels/{id}', { params: { path: { id: parcelId } } }).then(({ data: p }) => {
+      setSurveys(splitSurveys(p?.survey_number));
       if (p?.survey_number && p.village) {
         setHint(`Survey ${p.survey_number}, ${p.village}, ${p.taluka ?? ''} taluka, ${p.district ?? ''}`);
       }
@@ -198,6 +211,18 @@ export function SevenTwelveScreen({ parcelId, onBack }: Props) {
     setPhoto(null);
   };
 
+  const remove = async (survey: string) => {
+    setError(null);
+    const { data: rest, error: e } = await api.DELETE('/land-parcels/{id}/seven-twelve', {
+      params: { path: { id: parcelId }, query: { survey } },
+    });
+    if (e || !rest) {
+      setError('Could not remove it. Try again.');
+      return;
+    }
+    setSaved(rest);
+  };
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -248,33 +273,60 @@ export function SevenTwelveScreen({ parcelId, onBack }: Props) {
         The record of rights: who holds the land, its class, its area and any loan, tenant or acquisition on it.
       </Text>
 
-      {saved && !data ? (
+      {!data && (surveys.length > 1 || (saved && saved.records.length > 0)) ? (
         <>
-          <View style={styles.infoCard}>
-            <Text style={styles.infoText}>
-              Checked and saved {new Date(saved.confirmed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}. Reports on this parcel use it.
+          <Text style={styles.sectionHeading}>
+            {surveys.length > 1 ? `THIS LAND HAS ${surveys.length} SURVEY NUMBERS, ONE 7/12 EACH` : 'SAVED 7/12'}
+          </Text>
+          {saved ? <FlagList flags={saved.flags} /> : null}
+          {[
+            ...surveys.map(s => ({ survey: s, rec: saved?.records.find(r => surveyKey(r.data.survey_number) === surveyKey(s)) })),
+            ...(saved?.records ?? [])
+              .filter(r => !surveys.some(s => surveyKey(s) === surveyKey(r.data.survey_number)))
+              .map(r => ({ survey: r.data.survey_number, rec: r })),
+          ].map(({ survey, rec }) => (
+            <View key={survey} style={styles.card}>
+              {rec ? (
+                <>
+                  <Text style={styles.cardLine}>✓ Survey {rec.data.survey_number} · {rec.data.village}</Text>
+                  <Text style={styles.cardLine}>
+                    {TENURE[rec.data.tenure] ?? rec.data.tenure} · {rec.data.total_area_hr} {rec.data.area_unit === 'are' ? 'are.sq m' : 'ha'}
+                    {rec.data.is_na ? ' · NA' : ''}
+                  </Text>
+                  {rec.data.owners.filter(o => !o.former).map((o, i) => (
+                    <Text key={i} style={styles.cardLine}>Holder: {o.name}{o.mutation_no ? ` (mutation ${o.mutation_no})` : ''}</Text>
+                  ))}
+                  <Text style={styles.note}>
+                    {rec.data.verification_no ? `Signed copy, verification no. ${rec.data.verification_no}. ` : ''}
+                    Checked {new Date(rec.confirmed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}.
+                  </Text>
+                  <Pressable onPress={() => remove(rec.data.survey_number)} hitSlop={8}>
+                    <Text style={styles.link}>Remove this 7/12</Text>
+                  </Pressable>
+                </>
+              ) : (
+                <Text style={styles.cardLine}>✗ Survey {survey}: no 7/12 yet</Text>
+              )}
+            </View>
+          ))}
+          {saved && saved.records.length > 1 && saved.total_area_sqm > 0 ? (
+            <Text style={styles.note}>
+              Together: {Math.round(saved.total_area_sqm).toLocaleString('en-IN')} sq m ({(saved.total_area_sqm / 4046.8564224).toFixed(2)} acres).
+              Everyone who must sign: {saved.current_holders.join(', ')}.
             </Text>
-          </View>
-          <FlagList flags={saved.flags} />
-          <View style={styles.card}>
-            <Text style={styles.cardLine}>Survey / gat no. {saved.data.survey_number} · {saved.data.village}</Text>
-            <Text style={styles.cardLine}>
-              {TENURE[saved.data.tenure] ?? saved.data.tenure} · {saved.data.total_area_hr} {saved.data.area_unit === 'are' ? 'are.sq m' : 'ha'}
-              {saved.data.is_na ? ' · NA' : ''}
-            </Text>
-            {saved.data.verification_no ? (
-              <Text style={styles.cardLine}>Signed copy, verification no. {saved.data.verification_no}</Text>
-            ) : null}
-            {saved.data.owners.filter(o => !o.former).map((o, i) => (
-              <Text key={i} style={styles.cardLine}>Holder: {o.name}{o.mutation_no ? ` (mutation ${o.mutation_no})` : ''}</Text>
-            ))}
-          </View>
+          ) : null}
         </>
       ) : null}
 
       {!data ? (
         <View style={styles.actions}>
-          <Text style={styles.sectionHeading}>{saved ? 'READ A NEWER 7/12' : 'ADD THE 7/12'}</Text>
+          <Text style={styles.sectionHeading}>
+            {saved && saved.missing.length > 0
+              ? `ADD THE 7/12 FOR ${saved.missing.join(', ')}`
+              : saved && saved.records.length > 0
+                ? 'ADD OR REPLACE A 7/12'
+                : 'ADD THE 7/12'}
+          </Text>
           <Text style={styles.note}>Photograph the whole page in good light, flat, with all four edges showing.</Text>
           <Pressable style={styles.primaryBtn} onPress={() => { setWebMsg(null); setWeb(true); }} disabled={!!busy}>
             <Text style={styles.primaryBtnText}>Open Bhulekh (you type the captcha)</Text>

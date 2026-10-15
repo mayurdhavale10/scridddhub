@@ -58,7 +58,11 @@ type ReportSections struct {
 	Latitude     *float64 `json:"latitude,omitempty"`
 	Longitude    *float64 `json:"longitude,omitempty"`
 
-	// The parcel's confirmed 7/12: holders, tenure, other rights, and the warning signs read from it.
+	// The parcel's confirmed 7/12s, one per survey number it spans: holders, tenure, other rights
+	// and each one's warning signs. SevenTwelveSummary reads them side by side.
+	SevenTwelves       []ReportSevenTwelve        `json:"seven_twelves"`
+	SevenTwelveSummary *ReportSevenTwelveSummary `json:"seven_twelve_summary,omitempty"`
+	// SevenTwelve is the single 7/12 of reports frozen before 2026-10-15; read into SevenTwelves.
 	SevenTwelve *ReportSevenTwelve `json:"seven_twelve,omitempty"`
 
 	// D. Eco-sensitive zone check: one result per notification checked (village lists).
@@ -148,9 +152,18 @@ type ReportESZ struct {
 type ReportSevenTwelve struct {
 	Data        domain.SevenTwelve       `json:"data"`
 	Flags       []domain.SevenTwelveFlag `json:"flags"`
-	AreaAcres   *float64                 `json:"area_acres,omitempty"` // total area converted from hectare.are
+	AreaAcres   *float64                 `json:"area_acres,omitempty"` // this 7/12's area, converted from its unit
 	ConfirmedBy string                   `json:"confirmed_by"`
 	ConfirmedAt time.Time                `json:"confirmed_at"`
+}
+
+// ReportSevenTwelveSummary is what the parcel's 7/12s say together (domain.SevenTwelveSet).
+type ReportSevenTwelveSummary struct {
+	Flags          []domain.SevenTwelveFlag `json:"flags"`
+	TotalAreaAcres *float64                 `json:"total_area_acres,omitempty"`
+	TotalAreaSqm   float64                  `json:"total_area_sqm"`
+	Missing        []string                 `json:"missing"`         // survey numbers with no 7/12 yet
+	CurrentHolders []string                 `json:"current_holders"` // everyone who must sign
 }
 
 // ReportFSI is the indicative UDCPR band; an architect confirms the final figure.
@@ -209,7 +222,7 @@ func (u *DueDiligenceReportUsecase) WithESZ(src ESZSource) *DueDiligenceReportUs
 }
 
 type LandRecordGetter interface {
-	GetByLandParcel(ctx context.Context, parcelID uuid.UUID) (*domain.LandRecord, error)
+	ListByLandParcel(ctx context.Context, parcelID uuid.UUID) ([]domain.LandRecord, error)
 	GetMutations(ctx context.Context, parcelID uuid.UUID) (*domain.LandMutations, error)
 }
 
@@ -251,48 +264,83 @@ func (u *DueDiligenceReportUsecase) List(ctx context.Context, parcelID uuid.UUID
 	return list, nil
 }
 
-// landRecord returns the parcel's confirmed 7/12, or nil.
-func (u *DueDiligenceReportUsecase) landRecord(ctx context.Context, parcelID uuid.UUID) *domain.LandRecord {
-	if u.records == nil {
-		return nil
-	}
-	rec, err := u.records.GetByLandParcel(ctx, parcelID)
-	if err != nil {
-		if !errors.Is(err, domain.ErrNotFound) {
-			log.Printf("parcel %s: land record: %v", parcelID, err)
+// landRecords returns the parcel's confirmed 7/12s as a set (empty if none).
+func (u *DueDiligenceReportUsecase) landRecords(ctx context.Context, p *domain.LandParcel) domain.SevenTwelveSet {
+	var recs []domain.LandRecord
+	if u.records != nil {
+		var err error
+		if recs, err = u.records.ListByLandParcel(ctx, p.ID); err != nil {
+			log.Printf("parcel %s: land records: %v", p.ID, err)
+			recs = nil
 		}
-		return nil
 	}
-	return rec
+	return domain.NewSevenTwelveSet(recs, p.SurveyNumbers(), p.AreaAcres)
 }
 
 // inheritFromLandRecord fills land status (D) a person hasn't entered from the parcel's
-// confirmed 7/12, in memory. What the team typed on the report always wins.
+// confirmed 7/12s, in memory. What the team typed on the report always wins. With several
+// survey numbers, the class and NA status are only filled when every 7/12 is in and they agree
+// (any Class II piece makes the parcel Class II).
 func (u *DueDiligenceReportUsecase) inheritFromLandRecord(ctx context.Context, r *domain.DueDiligenceReport) {
 	if r.Final() {
 		return
 	}
-	rec := u.landRecord(ctx, r.LandParcelID)
-	if rec == nil {
+	p, err := u.parcels.Get(ctx, r.LandParcelID)
+	if err != nil {
 		return
 	}
-	d := rec.Data
-	if (r.OccupancyClass == "" || r.OccupancyClass == "unknown") && (d.Tenure == "class_1" || d.Tenure == "class_2") {
-		r.OccupancyClass = d.Tenure
+	set := u.landRecords(ctx, p)
+	if len(set.Records) == 0 {
+		return
 	}
-	if (r.NAStatus == "" || r.NAStatus == "unknown") && d.IsNA {
+	complete := len(set.Missing) == 0
+	class2, class1, allNA := false, 0, true
+	for _, rec := range set.Records {
+		switch rec.Data.Tenure {
+		case "class_2":
+			class2 = true
+		case "class_1":
+			class1++
+		}
+		allNA = allNA && rec.Data.IsNA
+	}
+	if r.OccupancyClass == "" || r.OccupancyClass == "unknown" {
+		switch {
+		case class2:
+			r.OccupancyClass = "class_2"
+		case complete && class1 == len(set.Records):
+			r.OccupancyClass = "class_1"
+		}
+	}
+	if (r.NAStatus == "" || r.NAStatus == "unknown") && complete && allNA {
 		r.NAStatus = "na_granted"
 	}
 	if strings.TrimSpace(r.TenancyRemarks) == "" {
 		var parts []string
-		if strings.TrimSpace(d.Tenants) != "" {
-			parts = append(parts, "Tenant: "+d.Tenants)
+		multi := len(set.Records) > 1 || !complete // label each line once the land has several pieces
+		for _, rec := range set.Records {
+			d := rec.Data
+			var own []string
+			if strings.TrimSpace(d.Tenants) != "" {
+				own = append(own, "Tenant: "+d.Tenants)
+			}
+			own = append(own, d.OtherRights...)
+			if len(own) == 0 {
+				own = []string{"none recorded"}
+			}
+			if multi {
+				parts = append(parts, d.SurveyNumber+": "+strings.Join(own, "; "))
+			} else {
+				parts = append(parts, own...)
+			}
 		}
-		parts = append(parts, d.OtherRights...)
-		if len(parts) == 0 {
+		if !multi && len(parts) == 1 && parts[0] == "none recorded" {
 			r.TenancyRemarks = "None recorded on the 7/12"
 		} else {
-			r.TenancyRemarks = strings.Join(parts, "; ")
+			r.TenancyRemarks = strings.Join(parts, " | ")
+		}
+		if !complete {
+			r.TenancyRemarks += " | No 7/12 yet for " + strings.Join(set.Missing, ", ")
 		}
 	}
 }
@@ -308,6 +356,10 @@ func (u *DueDiligenceReportUsecase) Get(ctx context.Context, id uuid.UUID) (*dom
 		if err := json.Unmarshal(r.FrozenReport, &s); err != nil {
 			return nil, nil, fmt.Errorf("reading frozen report: %w", err)
 		}
+		if s.SevenTwelve != nil && len(s.SevenTwelves) == 0 { // frozen before 2026-10-15
+			s.SevenTwelves = []ReportSevenTwelve{*s.SevenTwelve}
+		}
+		s.SevenTwelve = nil
 		return r, &s, nil
 	}
 	u.inheritFromLandRecord(ctx, r)
@@ -516,18 +568,22 @@ func (u *DueDiligenceReportUsecase) compose(ctx context.Context, r *domain.DueDi
 			log.Printf("report %s: infrastructure: %v", r.ID, err)
 		}
 	}
-	if rec := u.landRecord(ctx, r.LandParcelID); rec != nil {
-		st := &ReportSevenTwelve{Data: rec.Data, Flags: rec.Data.Flags(p.AreaAcres), ConfirmedBy: rec.ConfirmedBy, ConfirmedAt: rec.ConfirmedAt}
-		if p.SurveyNumber != nil && !domain.SameSurveyNumber(*p.SurveyNumber, rec.Data.SurveyNumber) {
-			st.Flags = append([]domain.SevenTwelveFlag{{Level: "high", Text: fmt.Sprintf(
-				"Survey number on the 7/12 (%s) doesn't match the one given for this parcel (%s). Make sure it's the right land.",
-				rec.Data.SurveyNumber, *p.SurveyNumber)}}, st.Flags...)
+	s.SevenTwelves = []ReportSevenTwelve{}
+	if set := u.landRecords(ctx, p); len(set.Records) > 0 {
+		for _, rec := range set.Records {
+			st := ReportSevenTwelve{Data: rec.Data, Flags: rec.Data.Flags(nil), ConfirmedBy: rec.ConfirmedBy, ConfirmedAt: rec.ConfirmedAt}
+			if sqm, err := rec.Data.AreaSqm(); err == nil && sqm > 0 {
+				a := sqm / domain.SqmPerAcre
+				st.AreaAcres = &a
+			}
+			s.SevenTwelves = append(s.SevenTwelves, st)
 		}
-		if sqm, err := rec.Data.AreaSqm(); err == nil && sqm > 0 {
-			a := sqm / domain.SqmPerAcre
-			st.AreaAcres = &a
+		sum := &ReportSevenTwelveSummary{Flags: set.Flags, TotalAreaSqm: set.TotalAreaSqm, Missing: set.Missing, CurrentHolders: set.CurrentHolders}
+		if set.TotalAreaSqm > 0 {
+			a := set.TotalAreaSqm / domain.SqmPerAcre
+			sum.TotalAreaAcres = &a
 		}
-		s.SevenTwelve = st
+		s.SevenTwelveSummary = sum
 	}
 
 	if u.records != nil {
@@ -575,8 +631,13 @@ func reportRequirements(s *ReportSections) []ReportRequirement {
 		add("A", "Map pin of the parcel", "Dropped on the map, or GPS on a site visit", "builder", true)
 	}
 
-	if s.SevenTwelve == nil {
-		add("A", "7/12 extract, read and checked", "Photo of the 7/12; our team gets a signed copy from Mahabhumi if needed", "team", true)
+	switch {
+	case len(s.SevenTwelves) == 0:
+		add("A", "7/12 extract, read and checked", "Signed 7/12 from Digital Satbara (digitalsatbara.mahabhumi.gov.in, ₹15), or a photo of the paper 7/12", "team", true)
+	case s.SevenTwelveSummary != nil:
+		for _, m := range s.SevenTwelveSummary.Missing {
+			add("A", "7/12 for survey "+m+", read and checked", "Signed 7/12 from Digital Satbara (digitalsatbara.mahabhumi.gov.in, ₹15), or a photo of the paper 7/12", "team", true)
+		}
 	}
 	if s.Mutations != nil && s.Mutations.YearsCovered < domain.TitleSearchYears {
 		add("B", fmt.Sprintf("Older records to complete %d years (the register goes back %d)", domain.TitleSearchYears, s.Mutations.YearsCovered),
@@ -597,7 +658,7 @@ func reportRequirements(s *ReportSections) []ReportRequirement {
 	for _, d := range s.Documents {
 		if d.Status != domain.DocumentStatusReceived {
 			src, who, quick := documentSource(d.DocumentType)
-			if s.SevenTwelve != nil && strings.Contains(d.DocumentType, "7/12") {
+			if len(s.SevenTwelves) > 0 && strings.Contains(d.DocumentType, "7/12") {
 				continue // read and confirmed on the parcel
 			}
 			if s.Mutations != nil && (strings.Contains(strings.ToLower(d.DocumentType), "mutation") || strings.Contains(strings.ToLower(d.DocumentType), "ferfar")) {

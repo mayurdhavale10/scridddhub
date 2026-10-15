@@ -332,6 +332,43 @@ at 200 dpi; the person adds it when checking.
 `pdftoppm`. Paths: `TESSERACT_BIN`, `TESSDATA_DIR`, `PDFTOPPM_BIN`. If either is missing the server
 logs it and the endpoint returns 503.
 
+**Second test, Varap 42/4/2** (one holder, so no common-area line): first read took the khata
+number (१२९) for the area because OCR printed "बिन होती" for बिन शेती. Fixed in the rules; both
+pages now read correctly.
+
+### 11. Land on several survey numbers: one 7/12 each
+Builder land usually spans several survey numbers (Varap: 42/3 and 42/4/2), and each has its own
+7/12 with its own holders. The parcel's survey number field takes them comma-separated
+("42/3, 42/4/2"), and **a 7/12 is saved per survey number** (migration 053: `land_records` is
+unique on parcel + `survey_key`). Saving a 7/12 for the same survey number again replaces it;
+"Remove this 7/12" deletes one (`DELETE /land-parcels/{id}/seven-twelve?survey=`).
+
+```mermaid
+flowchart LR
+    P[Parcel<br/>42/3, 42/4/2] --> A[7/12 for 42/3<br/>Kongere brothers, 1,160 sq m]
+    P --> B[7/12 for 42/4/2<br/>Bharat Gondhale, 910 sq m]
+    A --> S[Read together<br/>domain.SevenTwelveSet]
+    B --> S
+    S --> R[Report: both 7/12s,<br/>total 2,070 sq m,<br/>3 people must sign]
+```
+
+**Read across the set, by rules** (`domain/seven_twelve_set.go`):
+- **A survey number with no 7/12 yet** is a high flag and a "still to collect" line of its own.
+- **Everyone who must sign**, across all pieces, with the piece each holds.
+- **Total area** against the parcel's, only once every piece is in (one piece's area isn't the
+  parcel's).
+- **A 7/12 for a survey number not on the parcel** is a high flag (wrong land).
+- **Class and NA** fill section D only when every piece is in and they agree. Any Class II piece
+  makes the parcel Class II.
+- The AI verdict now sees every 7/12 (holders, class, area, rights, warnings). Before this it saw
+  none of them.
+
+Reports frozen before 2026-10-15 kept their single 7/12; it's read into the list when opened.
+
+**Tested 2026-10-15** on a throwaway parcel with the two real Varap PDFs: both saved side by side,
+2,070 sq m, three holders; removing 42/4/2 brought back "No 7/12 yet for 42/4/2"; the report
+filled Class I and NA granted once both were in; the PDF showed both sections and the summary.
+
 ## Life of a report
 
 ```mermaid

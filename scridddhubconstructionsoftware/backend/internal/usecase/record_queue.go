@@ -69,16 +69,24 @@ func (u *RecordQueueUsecase) Enqueue(ctx context.Context, actor string, lands []
 	return u.store.Enqueue(ctx, reqs)
 }
 
-// EnqueueParcel queues the parcel's 7/12 unless a fresh copy is already cached.
+// EnqueueParcel queues a 7/12 for each of the parcel's survey numbers that has no fresh cached
+// copy.
 func (u *RecordQueueUsecase) EnqueueParcel(ctx context.Context, actor string, p *domain.LandParcel) error {
 	if len(p.MissingLandRecordIDs()) > 0 {
 		return nil
 	}
-	if c, err := u.store.CacheFor(ctx, domain.RecordKind712, *p.District, *p.Taluka, *p.Village, domain.SurveyKey(*p.SurveyNumber)); err == nil && c.Fresh(u.now()) {
+	id := p.ID
+	var lands []LandToFetch
+	for _, s := range p.SurveyNumbers() {
+		if c, err := u.store.CacheFor(ctx, domain.RecordKind712, *p.District, *p.Taluka, *p.Village, domain.SurveyKey(s)); err == nil && c.Fresh(u.now()) {
+			continue
+		}
+		lands = append(lands, LandToFetch{District: *p.District, Taluka: *p.Taluka, Village: *p.Village, SurveyNumber: s, LandParcelID: &id})
+	}
+	if len(lands) == 0 {
 		return nil
 	}
-	id := p.ID
-	_, err := u.Enqueue(ctx, actor, []LandToFetch{{District: *p.District, Taluka: *p.Taluka, Village: *p.Village, SurveyNumber: *p.SurveyNumber, LandParcelID: &id}})
+	_, err := u.Enqueue(ctx, actor, lands)
 	return err
 }
 
@@ -171,17 +179,22 @@ func (u *RecordQueueUsecase) Skip(ctx context.Context, id uuid.UUID, status, not
 }
 
 // CachedForParcel returns the cached 7/12 for the parcel's land, as a draft to check and confirm.
-func (u *RecordQueueUsecase) CachedForParcel(ctx context.Context, parcelID uuid.UUID) (*domain.CachedRecord, *SevenTwelveDraft, error) {
+// survey picks which of the parcel's survey numbers; "" means the first.
+func (u *RecordQueueUsecase) CachedForParcel(ctx context.Context, parcelID uuid.UUID, survey string) (*domain.CachedRecord, *SevenTwelveDraft, error) {
 	p, err := u.parcels.Get(ctx, parcelID)
 	if err != nil {
 		return nil, nil, err
 	}
-	if len(p.MissingLandRecordIDs()) > 0 {
+	surveys := p.SurveyNumbers()
+	if len(p.MissingLandRecordIDs()) > 0 || len(surveys) == 0 {
 		return nil, nil, domain.ErrNotFound
 	}
-	c, err := u.store.CacheFor(ctx, domain.RecordKind712, *p.District, *p.Taluka, *p.Village, domain.SurveyKey(*p.SurveyNumber))
+	if survey == "" {
+		survey = surveys[0]
+	}
+	c, err := u.store.CacheFor(ctx, domain.RecordKind712, *p.District, *p.Taluka, *p.Village, domain.SurveyKey(survey))
 	if err != nil {
 		return nil, nil, err
 	}
-	return c, &SevenTwelveDraft{Data: c.Parsed, Flags: c.Parsed.Flags(p.AreaAcres), ReadBy: c.ReadBy}, nil
+	return c, &SevenTwelveDraft{Data: c.Parsed, Flags: draftFlags(p, &c.Parsed), ReadBy: c.ReadBy}, nil
 }

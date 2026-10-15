@@ -162,6 +162,7 @@ func main() {
 	mux.HandleFunc("POST /land-parcels/{id}/seven-twelve/read", landRecordHandler.Read)
 	mux.HandleFunc("PUT /land-parcels/{id}/seven-twelve", landRecordHandler.Confirm)
 	mux.HandleFunc("GET /land-parcels/{id}/seven-twelve", landRecordHandler.Get)
+	mux.HandleFunc("DELETE /land-parcels/{id}/seven-twelve", landRecordHandler.Delete)
 	mux.HandleFunc("POST /land-parcels/{id}/seven-twelve/read-text", landRecordHandler.ReadText)
 	mux.HandleFunc("POST /land-parcels/{id}/seven-twelve/read-pdf", landRecordHandler.ReadPDF)
 	mux.HandleFunc("GET /land-parcels/{id}/seven-twelve/cached", recordQueueHandler.Cached)

@@ -91,9 +91,18 @@
   <tr><td class="k">Asking price</td><td class="v">{{if $s.AskingRupees}}{{crore $s.AskingRupees}}{{else}}No price{{end}}</td></tr>
 </table>
 
-{{with $s.SevenTwelve}}
-<h3>From the 7/12 extract</h3>
+{{with $s.SevenTwelveSummary}}{{if gt (len $s.SevenTwelves) 1}}
+<h3>The 7/12 extracts together</h3>
 {{range .Flags}}<div class="flag {{.Level}}">{{.Text}}</div>{{end}}
+<table>
+  <tr><td class="k">Survey numbers</td><td class="v mr">{{range $i, $x := $s.SevenTwelves}}{{if $i}}, {{end}}{{$x.Data.SurveyNumber}}{{end}}{{range .Missing}}, {{.}} <span class="src">(no 7/12 yet)</span>{{end}}</td></tr>
+  {{if .TotalAreaAcres}}<tr><td class="k">Total area</td><td class="v">{{printf "%.0f" .TotalAreaSqm}} sq m <span class="src">({{f2 (deref .TotalAreaAcres)}} acres)</span></td></tr>{{end}}
+  <tr><td class="k">Everyone who must sign</td><td class="v mr">{{range $i, $h := .CurrentHolders}}{{if $i}}, {{end}}{{$h}}{{end}}</td></tr>
+</table>
+{{end}}{{end}}
+{{range $s.SevenTwelves}}
+<h3>From the 7/12 extract: survey {{.Data.SurveyNumber}}</h3>
+{{if eq (len $s.SevenTwelves) 1}}{{with $s.SevenTwelveSummary}}{{range .Flags}}<div class="flag {{.Level}}">{{.Text}}</div>{{end}}{{end}}{{else}}{{range .Flags}}<div class="flag {{.Level}}">{{.Text}}</div>{{end}}{{end}}
 <table>
   <tr><td class="k">Survey / gat no. on the 7/12</td><td class="v mr">{{.Data.SurveyNumber}}</td></tr>
   <tr><td class="k">Tenure</td><td class="v">{{tenure .Data.Tenure}}</td></tr>

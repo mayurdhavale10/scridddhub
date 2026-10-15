@@ -124,7 +124,8 @@ type confirmLandRecordRequest struct {
 	ReadBy string             `json:"read_by"`
 }
 
-// Confirm handles PUT /land-parcels/{id}/seven-twelve: saves the 7/12 a person has checked.
+// Confirm handles PUT /land-parcels/{id}/seven-twelve: saves the 7/12 a person has checked, for
+// the survey number it shows. Returns the parcel's full set of 7/12s.
 func (h *LandRecordHandler) Confirm(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
@@ -148,7 +149,8 @@ func (h *LandRecordHandler) Confirm(w http.ResponseWriter, r *http.Request) {
 	h.respond(w, r, rec.LandParcelID)
 }
 
-// Get handles GET /land-parcels/{id}/seven-twelve; 404 until one is confirmed.
+// Get handles GET /land-parcels/{id}/seven-twelve: every confirmed 7/12 of the parcel (records is
+// empty until one is confirmed; 404 only if the parcel doesn't exist).
 func (h *LandRecordHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
@@ -240,14 +242,52 @@ func (h *LandRecordHandler) GetFerfar(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// sevenTwelveSetResponse is the parcel's 7/12s, one per survey number, with the warnings read
+// across all of them.
+type sevenTwelveSetResponse struct {
+	Records        []landRecordResponse     `json:"records"`
+	Flags          []domain.SevenTwelveFlag `json:"flags"`
+	TotalAreaSqm   float64                  `json:"total_area_sqm"`
+	Missing        []string                 `json:"missing"`
+	Extra          []string                 `json:"extra"`
+	CurrentHolders []string                 `json:"current_holders"`
+}
+
+// Delete handles DELETE /land-parcels/{id}/seven-twelve?survey=42/3: removes the 7/12 saved for
+// that survey number.
+func (h *LandRecordHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	survey := r.URL.Query().Get("survey")
+	if survey == "" {
+		writeError(w, http.StatusBadRequest, errors.New("survey is required"))
+		return
+	}
+	if err := h.usecase.Delete(r.Context(), middleware.ActorFromContext(r.Context()), id, survey); err != nil {
+		writeNotFoundOrError(w, err)
+		return
+	}
+	h.respond(w, r, id)
+}
+
 func (h *LandRecordHandler) respond(w http.ResponseWriter, r *http.Request, parcelID uuid.UUID) {
-	rec, flags, err := h.usecase.Get(r.Context(), parcelID)
+	set, err := h.usecase.Get(r.Context(), parcelID)
 	if err != nil {
 		writeNotFoundOrError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, landRecordResponse{
-		Data: rec.Data, Flags: flags, ReadBy: rec.ReadBy,
-		ConfirmedBy: rec.ConfirmedBy, ConfirmedAt: rec.ConfirmedAt.Format(timeFormat),
-	})
+	resp := sevenTwelveSetResponse{
+		Records: make([]landRecordResponse, 0, len(set.Records)), Flags: set.Flags, TotalAreaSqm: set.TotalAreaSqm,
+		Missing: set.Missing, Extra: set.Extra, CurrentHolders: set.CurrentHolders,
+	}
+	for _, rec := range set.Records {
+		resp.Records = append(resp.Records, landRecordResponse{
+			Data: rec.Data, Flags: rec.Data.Flags(nil), ReadBy: rec.ReadBy,
+			ConfirmedBy: rec.ConfirmedBy, ConfirmedAt: rec.ConfirmedAt.Format(timeFormat),
+		})
+	}
+	writeJSON(w, http.StatusOK, resp)
 }

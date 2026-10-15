@@ -445,6 +445,7 @@ paths:
                   type: string
                 survey_number:
                   type: string
+                  description: One survey number, or several comma-separated ("42/3, 42/4/2")
       responses:
         "200":
           description: OK
@@ -554,7 +555,11 @@ paths:
   /land-parcels/{id}/seven-twelve:
     get:
       operationId: getSevenTwelve
-      summary: The parcel's confirmed 7/12 (404 until confirmed)
+      summary: The parcel's confirmed 7/12s, one per survey number, read together
+      description: >-
+        records is empty until one is confirmed. flags include each 7/12's warnings (prefixed with
+        its survey number when there are several) and the ones read across them: survey numbers
+        with no 7/12 yet, every holder who must sign, and the total area against the parcel's.
       parameters:
         - $ref: "#/components/parameters/LandParcelId"
       responses:
@@ -563,12 +568,30 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/LandRecord"
+                $ref: "#/components/schemas/SevenTwelveSet"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteSevenTwelve
+      summary: Remove the 7/12 saved for one survey number of the parcel
+      parameters:
+        - $ref: "#/components/parameters/LandParcelId"
+        - name: survey
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The remaining set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SevenTwelveSet"
         "404":
           $ref: "#/components/responses/NotFound"
     put:
       operationId: confirmSevenTwelve
-      summary: Save the 7/12 after a person has checked it
+      summary: Save a 7/12 after a person has checked it (keyed by the survey number it shows; returns the set)
       parameters:
         - $ref: "#/components/parameters/LandParcelId"
       requestBody:
@@ -589,7 +612,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/LandRecord"
+                $ref: "#/components/schemas/SevenTwelveSet"
         "400":
           $ref: "#/components/responses/BadRequest"
         "404":
@@ -2636,7 +2659,9 @@ components:
         survey_number:
           type: string
           nullable: true
-          description: Survey/gat number with hissa as written on the 7/12, e.g. "45/2A"
+          description: >-
+            Survey/gat number(s) with hissa as written on the 7/12s, e.g. "45/2A". Land spanning
+            several survey numbers lists them comma-separated: "42/3, 42/4/2".
         closed_price_rupees:
           type: integer
           format: int64
@@ -3473,6 +3498,32 @@ components:
         confirmed_by: { type: string }
         confirmed_at: { type: string }
 
+    SevenTwelveSet:
+      type: object
+      required: [records, flags, total_area_sqm, missing, extra, current_holders]
+      properties:
+        records:
+          type: array
+          items: { $ref: "#/components/schemas/LandRecord" }
+        flags:
+          type: array
+          items: { $ref: "#/components/schemas/SevenTwelveFlag" }
+        total_area_sqm:
+          type: number
+          description: Sum of the 7/12s' areas; 0 if any area couldn't be read
+        missing:
+          type: array
+          description: The parcel's survey numbers with no confirmed 7/12 yet
+          items: { type: string }
+        extra:
+          type: array
+          description: Confirmed 7/12s for survey numbers not on the parcel
+          items: { type: string }
+        current_holders:
+          type: array
+          description: Everyone who must sign, across all the 7/12s
+          items: { type: string }
+
     MutationEntry:
       type: object
       required: [number, date, type, status]
@@ -3561,6 +3612,22 @@ components:
         confirmed_by: { type: string }
         confirmed_at: { type: string }
 
+    ReportSevenTwelveSummary:
+      type: object
+      required: [flags, total_area_sqm, missing, current_holders]
+      properties:
+        flags:
+          type: array
+          items: { $ref: "#/components/schemas/SevenTwelveFlag" }
+        total_area_acres: { type: number }
+        total_area_sqm: { type: number }
+        missing:
+          type: array
+          items: { type: string }
+        current_holders:
+          type: array
+          items: { type: string }
+
     ReportFSI:
       type: object
       required: [basic, premium, tdr, max, max_with_ancillary, source]
@@ -3615,8 +3682,13 @@ components:
           type: string
         survey_number:
           type: string
-        seven_twelve:
-          $ref: "#/components/schemas/ReportSevenTwelve"
+        seven_twelves:
+          type: array
+          description: One per survey number the parcel spans
+          items:
+            $ref: "#/components/schemas/ReportSevenTwelve"
+        seven_twelve_summary:
+          $ref: "#/components/schemas/ReportSevenTwelveSummary"
         esz:
           type: array
           items:

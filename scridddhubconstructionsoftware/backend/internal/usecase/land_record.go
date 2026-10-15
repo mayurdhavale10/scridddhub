@@ -29,8 +29,9 @@ type FerfarReader interface {
 }
 
 type LandRecordRepository interface {
-	GetByLandParcel(ctx context.Context, parcelID uuid.UUID) (*domain.LandRecord, error)
+	ListByLandParcel(ctx context.Context, parcelID uuid.UUID) ([]domain.LandRecord, error)
 	Upsert(ctx context.Context, actor string, rec *domain.LandRecord) error
+	Delete(ctx context.Context, actor string, parcelID uuid.UUID, surveyKey string) error
 	GetMutations(ctx context.Context, parcelID uuid.UUID) (*domain.LandMutations, error)
 	UpsertMutations(ctx context.Context, actor string, m *domain.LandMutations) error
 }
@@ -77,7 +78,7 @@ func (u *LandRecordUsecase) ReadText(ctx context.Context, parcelID uuid.UUID, te
 	if err != nil {
 		return nil, err
 	}
-	return &SevenTwelveDraft{Data: *data, Flags: data.Flags(p.AreaAcres), ReadBy: model}, nil
+	return &SevenTwelveDraft{Data: *data, Flags: draftFlags(p, data), ReadBy: model}, nil
 }
 
 // SignedPDFText is implemented by internal/ocr: the page text of a signed 7/12 PDF.
@@ -139,7 +140,7 @@ func (u *LandRecordUsecase) ReadSignedPDF(ctx context.Context, parcelID uuid.UUI
 		notes = append(notes, "no Digital Satbara verification number found on the page")
 	}
 	data.Notes = strings.TrimSpace(strings.Join(append(notes, data.Notes), ". "))
-	return &SevenTwelveDraft{Data: *data, Flags: data.Flags(p.AreaAcres), ReadBy: model + " + tesseract"}, nil
+	return &SevenTwelveDraft{Data: *data, Flags: draftFlags(p, data), ReadBy: model + " + tesseract"}, nil
 }
 
 // cleanOtherRights drops entries that are only area lines from the next column (OCR runs the
@@ -296,10 +297,34 @@ func (u *LandRecordUsecase) Read(ctx context.Context, parcelID uuid.UUID, image 
 	if err != nil {
 		return nil, fmt.Errorf("reading the 7/12: %w", err)
 	}
-	return &SevenTwelveDraft{Data: *data, Flags: data.Flags(p.AreaAcres), ReadBy: model}, nil
+	return &SevenTwelveDraft{Data: *data, Flags: draftFlags(p, data), ReadBy: model}, nil
 }
 
-// Confirm saves the 7/12 after a person has checked it.
+// draftFlags are a draft's warnings. When the parcel spans several survey numbers, one 7/12's
+// area is only part of the parcel's, so the area check waits for the full set; and a 7/12 for a
+// survey number not on the parcel is called out.
+func draftFlags(p *domain.LandParcel, data *domain.SevenTwelve) []domain.SevenTwelveFlag {
+	surveys := p.SurveyNumbers()
+	area := p.AreaAcres
+	if len(surveys) > 1 {
+		area = nil
+	}
+	flags := data.Flags(area)
+	if len(surveys) > 0 && data.SurveyNumber != "" {
+		for _, s := range surveys {
+			if domain.SameSurveyNumber(s, data.SurveyNumber) {
+				return flags
+			}
+		}
+		flags = append([]domain.SevenTwelveFlag{{Level: "high", Text: fmt.Sprintf(
+			"This 7/12 is for %s, which isn't one of this parcel's survey numbers (%s). Make sure it's the right land.",
+			data.SurveyNumber, strings.Join(surveys, ", "))}}, flags...)
+	}
+	return flags
+}
+
+// Confirm saves the 7/12 for one survey number after a person has checked it. Saving the same
+// survey number again replaces it; other survey numbers' 7/12s are kept.
 func (u *LandRecordUsecase) Confirm(ctx context.Context, actor string, parcelID uuid.UUID, data domain.SevenTwelve, readBy string) (*domain.LandRecord, error) {
 	if _, err := u.parcels.Get(ctx, parcelID); err != nil {
 		return nil, err
@@ -307,21 +332,36 @@ func (u *LandRecordUsecase) Confirm(ctx context.Context, actor string, parcelID 
 	if err := data.Validate(); err != nil {
 		return nil, err
 	}
-	rec := &domain.LandRecord{LandParcelID: parcelID, Data: data, ReadBy: readBy, ConfirmedBy: actor, ConfirmedAt: u.now()}
+	key := domain.SurveyKey(data.SurveyNumber)
+	if key == "" {
+		return nil, fmt.Errorf("survey number %q has no digits", data.SurveyNumber)
+	}
+	rec := &domain.LandRecord{LandParcelID: parcelID, SurveyKey: key, Data: data, ReadBy: readBy, ConfirmedBy: actor, ConfirmedAt: u.now()}
 	if err := u.repo.Upsert(ctx, actor, rec); err != nil {
 		return nil, err
 	}
 	return rec, nil
 }
 
-func (u *LandRecordUsecase) Get(ctx context.Context, parcelID uuid.UUID) (*domain.LandRecord, []domain.SevenTwelveFlag, error) {
+// Get returns the parcel's confirmed 7/12s, one per survey number, with the warnings read
+// across them (missing pieces, every holder who must sign, total area).
+func (u *LandRecordUsecase) Get(ctx context.Context, parcelID uuid.UUID) (*domain.SevenTwelveSet, error) {
 	p, err := u.parcels.Get(ctx, parcelID)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	rec, err := u.repo.GetByLandParcel(ctx, parcelID)
+	recs, err := u.repo.ListByLandParcel(ctx, parcelID)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return rec, rec.Data.Flags(p.AreaAcres), nil
+	set := domain.NewSevenTwelveSet(recs, p.SurveyNumbers(), p.AreaAcres)
+	return &set, nil
+}
+
+// Delete removes the 7/12 saved for one survey number of the parcel.
+func (u *LandRecordUsecase) Delete(ctx context.Context, actor string, parcelID uuid.UUID, surveyNumber string) error {
+	if _, err := u.parcels.Get(ctx, parcelID); err != nil {
+		return err
+	}
+	return u.repo.Delete(ctx, actor, parcelID, domain.SurveyKey(surveyNumber))
 }

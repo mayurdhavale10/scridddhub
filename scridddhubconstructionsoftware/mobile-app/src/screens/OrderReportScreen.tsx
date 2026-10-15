@@ -120,8 +120,8 @@ function LandRecordCard({
       <Text style={styles.formHint}>
         As written on the 7/12. We use these to pull the land records, so the report can’t start without them.
       </Text>
-      <Text style={styles.fieldLabel}>Survey / gat number (with hissa)</Text>
-      <TextInput style={styles.input} value={survey} onChangeText={setSurvey} placeholder="e.g. 45/2A" placeholderTextColor={colors.outline} />
+      <Text style={styles.fieldLabel}>Survey / gat number(s), with hissa</Text>
+      <TextInput style={styles.input} value={survey} onChangeText={setSurvey} placeholder="e.g. 45/2A, or 42/3, 42/4/2 if the land spans several" placeholderTextColor={colors.outline} />
       <Text style={styles.fieldLabel}>Village</Text>
       <TextInput
         style={styles.input}

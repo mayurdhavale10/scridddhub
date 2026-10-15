@@ -63,10 +63,12 @@ func (s *SevenTwelve) AreaSqm() (float64, error) {
 	return ParseHectareAre(s.TotalAreaHR)
 }
 
-// LandRecord is a confirmed 7/12 for a parcel.
+// LandRecord is a confirmed 7/12 for one survey number of a parcel. A parcel has one per survey
+// number it spans (migration 053).
 type LandRecord struct {
 	ID           uuid.UUID
 	LandParcelID uuid.UUID
+	SurveyKey    string // SurveyKey(Data.SurveyNumber)
 	Data         SevenTwelve
 	ReadBy       string // the AI model that drafted it ("" if typed by hand)
 	ConfirmedBy  string

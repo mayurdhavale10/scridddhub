@@ -145,6 +145,48 @@ func (p *LandParcel) MissingLandRecordIDs() []string {
 	return missing
 }
 
+// SurveyNumbers lists the parcel's survey/gat numbers. Land often spans several, each with its
+// own 7/12, written comma-separated: "42/3, 42/4/2".
+func (p *LandParcel) SurveyNumbers() []string {
+	if p.SurveyNumber == nil {
+		return nil
+	}
+	return SplitSurveyNumbers(*p.SurveyNumber)
+}
+
+// SplitSurveyNumbers splits "42/3, 42/4/2" (or with ; or new lines) into its survey numbers,
+// dropping blanks and repeats of the same land ("42/3" and "४२/३").
+func SplitSurveyNumbers(s string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, part := range strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ';' || r == '\n' }) {
+		part = strings.TrimSpace(part)
+		if part == "" || seen[SurveyKey(part)] {
+			continue
+		}
+		seen[SurveyKey(part)] = true
+		out = append(out, part)
+	}
+	return out
+}
+
+// ValidateSurveyNumbers checks a parcel's survey numbers, one or several comma-separated.
+func ValidateSurveyNumbers(s string) error {
+	parts := SplitSurveyNumbers(s)
+	if len(parts) == 0 {
+		return fmt.Errorf("survey number is required")
+	}
+	if len(parts) > 20 {
+		return fmt.Errorf("at most 20 survey numbers per parcel")
+	}
+	for _, p := range parts {
+		if err := ValidateSurveyNumber(p); err != nil {
+			return fmt.Errorf("%q: %w", p, err)
+		}
+	}
+	return nil
+}
+
 // ValidateSurveyNumber accepts survey/gat numbers as written on a 7/12: digits with an optional
 // hissa ("45", "45/2", "45/2A", "112/1/B", "45 पैकी").
 func ValidateSurveyNumber(s string) error {

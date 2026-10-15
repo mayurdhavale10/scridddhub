@@ -78,6 +78,32 @@ func TestApplySignedCopyTextRights(t *testing.T) {
 	}
 }
 
+// Varap 42/4/2: one holder, so no common-area line; the area is on the NA line (read "बिन होती"),
+// and the khata number (१२९) comes first on the holder's line.
+const varap4242OCR = `क्षेत्राचेएकक आर.चौ.मी | १२९ भरत गजानन गोंधळे ९.१०.०० २९५.०० (१०९०) कुळाचे नाव व खंड
+अकृषिक क्षेत्र [इतर अधिकार
+बिन होती ९.१०.०० अकृषिक वापर
+पिं क्र.महसुल/कक्ष-१/टे-७/बां.प./वरप- कल्याण
+बिन होती २९५.०० /एसआर-१०/२०१९ आदेश दिनांक :
+आकारणी ०३/०८/२०१९ नुसार गट/सर्वे क्र. ४२/४/२ क्षेत्र
+पिं ९१०.०० चौ. मी ची रहिवास या प्रयोजनासाठी
+[अकृषिक वापर करणेस व बांधकाम करणेस मंजुर
+नकाश प्रमाणे आदेशातील अट क्र. १ ते ६५ यांस
+अधिन राहुन परवानगी (१०९०)
+प्रलंबित फेरफार : नाही.`
+
+func TestApplySignedCopyTextSingleHolder(t *testing.T) {
+	s := SevenTwelve{TotalAreaHR: "129"} // the AI took the khata number for the area
+	s.ApplySignedCopyText(varap4242OCR)
+	if s.AreaUnit != AreaUnitAre || s.TotalAreaHR != "9.10.00" {
+		t.Fatalf("area = %q %q, want are 9.10.00", s.AreaUnit, s.TotalAreaHR)
+	}
+	want := NAPermissionPrefix + "क्र.महसुल/कक्ष-१/टे-७/बां.प./वरप- कल्याण /एसआर-१०/२०१९ आदेश दिनांक : ०३/०८/२०१९ नुसार गट/सर्वे क्र. ४२/४/२ क्षेत्र ९१०.०० चौ. मी ची रहिवास या प्रयोजनासाठी अकृषिक वापर करणेस व बांधकाम करणेस मंजुर नकाश प्रमाणे आदेशातील अट क्र. १ ते ६५ यांस अधिन राहुन परवानगी (१०९०)"
+	if len(s.OtherRights) != 1 || s.OtherRights[0] != want {
+		t.Errorf("other rights = %q\nwant [%q]", s.OtherRights, want)
+	}
+}
+
 func TestApplySignedCopyTextCommas(t *testing.T) {
 	// The same page OCR'd at 300 dpi printed the separators as commas.
 	s := SevenTwelve{TotalAreaHR: "११६०.००"}

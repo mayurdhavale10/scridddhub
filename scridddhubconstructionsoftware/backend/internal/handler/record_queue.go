@@ -158,7 +158,7 @@ func (h *RecordQueueHandler) SetStatus(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Cached handles GET /land-parcels/{id}/seven-twelve/cached: the cached 7/12 for the parcel's
+// Cached handles GET /land-parcels/{id}/seven-twelve/cached?survey=: the cached 7/12 for one of the parcel's survey numbers (default the first)
 // land, as a draft to check and confirm; 404 when none.
 func (h *RecordQueueHandler) Cached(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
@@ -166,7 +166,7 @@ func (h *RecordQueueHandler) Cached(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	c, draft, err := h.usecase.CachedForParcel(r.Context(), id)
+	c, draft, err := h.usecase.CachedForParcel(r.Context(), id, r.URL.Query().Get("survey"))
 	if err != nil {
 		writeNotFoundOrError(w, err)
 		return

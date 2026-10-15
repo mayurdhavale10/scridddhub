@@ -312,6 +312,9 @@ export function ReportScreen({ reportId, onBack, onOpenLegalCheck, onOpenSevenTw
 
   const s = detail.sections;
   const final = detail.status !== 'draft';
+  // One 7/12 per survey number of the parcel; missing ones are still to collect.
+  const sevenTwelves = s.seven_twelves ?? [];
+  const missing = s.seven_twelve_summary?.missing ?? [];
   const full = detail.tier === 'full';
   const reqs = s.requirements ?? [];
   // What blocks finishing: a Quick Screen waits for its own items, a Full Report for all of them
@@ -441,33 +444,57 @@ export function ReportScreen({ reportId, onBack, onOpenLegalCheck, onOpenSevenTw
         <Row label="Asking price" value={s.asking_rupees != null ? crore(s.asking_rupees) : 'No price'} />
         <Pressable onPress={final ? undefined : onOpenSevenTwelve}>
           <Row label="7/12 extract" last
-            value={s.seven_twelve ? `Checked ${day(s.seven_twelve.confirmed_at)}` : TO_COLLECT}
-            sub={final ? undefined : s.seven_twelve ? 'Tap to read a newer one' : 'Tap to add the signed PDF or a photo; it’s read for you, you check it'} />
+            value={
+              sevenTwelves.length === 0
+                ? TO_COLLECT
+                : missing.length > 0
+                  ? `${sevenTwelves.length} of ${sevenTwelves.length + missing.length} checked`
+                  : sevenTwelves.length > 1 ? `All ${sevenTwelves.length} checked` : `Checked ${day(sevenTwelves[0].confirmed_at)}`
+            }
+            sub={final ? undefined : missing.length > 0 ? `Tap to add the 7/12 for ${missing.join(', ')}` : sevenTwelves.length > 0 ? 'Tap to see or replace them' : 'Tap to add the signed PDF or a photo; it’s read for you, you check it'} />
         </Pressable>
       </Section>
 
-      {s.seven_twelve ? (
+      {sevenTwelves.length > 0 ? (
         <View style={styles.section}>
-          <Text style={styles.sectionHeading}>FROM THE 7/12</Text>
-          {s.seven_twelve.flags.map((f, i) => (
+          <Text style={styles.sectionHeading}>{sevenTwelves.length > 1 ? `FROM THE ${sevenTwelves.length} 7/12s` : 'FROM THE 7/12'}</Text>
+          {(s.seven_twelve_summary?.flags ?? []).map((f, i) => (
             <View key={i} style={[styles.flag, { backgroundColor: f.level === 'high' ? RED_BG : AMBER_BG }]}>
               <Text style={[styles.flagText, { color: f.level === 'high' ? colors.error : AMBER }]}>{f.text}</Text>
             </View>
           ))}
-          <View style={styles.card}>
-            <Row label="Tenure" value={s.seven_twelve.data.tenure === 'class_2' ? 'Class II' : s.seven_twelve.data.tenure === 'class_1' ? 'Class I' : s.seven_twelve.data.tenure === 'govt_lease' ? 'Govt. lease' : TO_COLLECT} />
-            <Row label="Area on the 7/12" value={`${s.seven_twelve.data.total_area_hr} ${s.seven_twelve.data.area_unit === 'are' ? 'are.sq m' : 'ha'}`}
-              sub={s.seven_twelve.area_acres != null ? `${s.seven_twelve.area_acres.toFixed(2)} acres` : undefined} />
-            {s.seven_twelve.data.is_na ? <Row label="Use" value="Non-agricultural (NA)" /> : null}
-            {s.seven_twelve.data.verification_no ? (
-              <Row label="Signed copy" value={s.seven_twelve.data.signed_on ? `Signed ${s.seven_twelve.data.signed_on}` : 'Signed'}
-                sub={`Verify no. ${s.seven_twelve.data.verification_no} at digitalsatbara.mahabhumi.gov.in`} />
-            ) : null}
-            {s.seven_twelve.data.owners.filter(o => !o.former).map((o, i) => (
-              <Row key={i} label={o.name} sub={o.mutation_no ? `Holder · mutation ${o.mutation_no}` : 'Holder'} value={o.area_hr ? `${o.area_hr} ha` : undefined} />
-            ))}
-            <Row label="Last mutation" value={s.seven_twelve.data.last_mutation || TO_COLLECT} last />
-          </View>
+          {sevenTwelves.length > 1 && s.seven_twelve_summary ? (
+            <View style={styles.card}>
+              {s.seven_twelve_summary.total_area_acres != null ? (
+                <Row label="Total area" value={`${Math.round(s.seven_twelve_summary.total_area_sqm).toLocaleString('en-IN')} sq m`}
+                  sub={`${s.seven_twelve_summary.total_area_acres.toFixed(2)} acres`} />
+              ) : null}
+              <Row label="Everyone who must sign" value={s.seven_twelve_summary.current_holders.join(', ')} last />
+            </View>
+          ) : null}
+          {sevenTwelves.map(st => (
+            <View key={st.data.survey_number} style={styles.card}>
+              <Row label="Survey / gat no." value={st.data.survey_number} />
+              <Row label="Tenure" value={st.data.tenure === 'class_2' ? 'Class II' : st.data.tenure === 'class_1' ? 'Class I' : st.data.tenure === 'govt_lease' ? 'Govt. lease' : TO_COLLECT} />
+              <Row label="Area on the 7/12" value={`${st.data.total_area_hr} ${st.data.area_unit === 'are' ? 'are.sq m' : 'ha'}`}
+                sub={st.area_acres != null ? `${st.area_acres.toFixed(2)} acres` : undefined} />
+              {st.data.is_na ? <Row label="Use" value="Non-agricultural (NA)" /> : null}
+              {st.data.verification_no ? (
+                <Row label="Signed copy" value={st.data.signed_on ? `Signed ${st.data.signed_on}` : 'Signed'}
+                  sub={`Verify no. ${st.data.verification_no} at digitalsatbara.mahabhumi.gov.in`} />
+              ) : null}
+              {st.data.owners.filter(o => !o.former).map((o, i) => (
+                <Row key={i} label={o.name} sub={o.mutation_no ? `Holder · mutation ${o.mutation_no}` : 'Holder'} value={o.area_hr ? `${o.area_hr} ha` : undefined} />
+              ))}
+              {st.data.other_rights.map((r, i) => <Row key={`r${i}`} label="Other right" value={r} />)}
+              <Row label="Last mutation" value={st.data.last_mutation || TO_COLLECT} last />
+            </View>
+          ))}
+          {missing.map(m => (
+            <View key={m} style={styles.card}>
+              <Row label={`Survey ${m}`} value={TO_COLLECT} sub="No 7/12 yet: this part of the land is unchecked" last />
+            </View>
+          ))}
         </View>
       ) : null}
 

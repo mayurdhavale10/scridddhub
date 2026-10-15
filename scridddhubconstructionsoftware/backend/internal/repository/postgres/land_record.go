@@ -10,8 +10,9 @@ import (
 	"github.com/scridddhub/backend/internal/domain"
 )
 
-// LandRecordRepository stores a parcel's confirmed 7/12 (migration 049). One per parcel; saving
-// again replaces it. Every save is audited.
+// LandRecordRepository stores a parcel's confirmed 7/12s (migrations 049, 053): one per survey
+// number the parcel spans; saving the same survey number again replaces it. Every change is
+// audited.
 type LandRecordRepository struct {
 	pool *pgxpool.Pool
 }
@@ -22,8 +23,22 @@ func NewLandRecordRepository(pool *pgxpool.Pool) *LandRecordRepository {
 
 const landRecordCols = `id, land_parcel_id, data, COALESCE(read_by, ''), confirmed_by, confirmed_at, created_at, updated_at`
 
-func (r *LandRecordRepository) GetByLandParcel(ctx context.Context, parcelID uuid.UUID) (*domain.LandRecord, error) {
-	return scanLandRecord(r.pool.QueryRow(ctx, `SELECT `+landRecordCols+` FROM land_records WHERE land_parcel_id = $1`, parcelID))
+// ListByLandParcel returns the parcel's confirmed 7/12s (empty if none), in no particular order.
+func (r *LandRecordRepository) ListByLandParcel(ctx context.Context, parcelID uuid.UUID) ([]domain.LandRecord, error) {
+	rows, err := r.pool.Query(ctx, `SELECT `+landRecordCols+`, survey_key FROM land_records WHERE land_parcel_id = $1`, parcelID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.LandRecord
+	for rows.Next() {
+		rec, err := scanLandRecordKeyed(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *rec)
+	}
+	return out, rows.Err()
 }
 
 func (r *LandRecordRepository) Upsert(ctx context.Context, actor string, rec *domain.LandRecord) error {
@@ -33,7 +48,8 @@ func (r *LandRecordRepository) Upsert(ctx context.Context, actor string, rec *do
 	}
 	defer tx.Rollback(ctx)
 
-	before, err := scanLandRecord(tx.QueryRow(ctx, `SELECT `+landRecordCols+` FROM land_records WHERE land_parcel_id = $1 FOR UPDATE`, rec.LandParcelID))
+	before, err := scanLandRecordKeyed(tx.QueryRow(ctx, `SELECT `+landRecordCols+`, survey_key FROM land_records
+		WHERE land_parcel_id = $1 AND survey_key = $2 FOR UPDATE`, rec.LandParcelID, rec.SurveyKey))
 	if err != nil && err != domain.ErrNotFound {
 		return err
 	}
@@ -42,13 +58,13 @@ func (r *LandRecordRepository) Upsert(ctx context.Context, actor string, rec *do
 		return err
 	}
 	row := tx.QueryRow(ctx, `
-		INSERT INTO land_records (land_parcel_id, data, read_by, confirmed_by, confirmed_at)
-		VALUES ($1, $2::jsonb, NULLIF($3, ''), $4, $5)
-		ON CONFLICT (land_parcel_id) DO UPDATE SET
+		INSERT INTO land_records (land_parcel_id, survey_key, data, read_by, confirmed_by, confirmed_at)
+		VALUES ($1, $2, $3::jsonb, NULLIF($4, ''), $5, $6)
+		ON CONFLICT (land_parcel_id, survey_key) DO UPDATE SET
 			data = EXCLUDED.data, read_by = EXCLUDED.read_by, confirmed_by = EXCLUDED.confirmed_by,
 			confirmed_at = EXCLUDED.confirmed_at, updated_at = now()
 		RETURNING id, created_at, updated_at
-	`, rec.LandParcelID, string(data), rec.ReadBy, rec.ConfirmedBy, rec.ConfirmedAt)
+	`, rec.LandParcelID, rec.SurveyKey, string(data), rec.ReadBy, rec.ConfirmedBy, rec.ConfirmedAt)
 	if err := row.Scan(&rec.ID, &rec.CreatedAt, &rec.UpdatedAt); err != nil {
 		return err
 	}
@@ -58,6 +74,28 @@ func (r *LandRecordRepository) Upsert(ctx context.Context, actor string, rec *do
 		action, prev = "update", before
 	}
 	if err := writeAudit(ctx, tx, "land_records", rec.ID, action, actor, prev, rec); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// Delete removes the 7/12 saved for one survey number of the parcel (e.g. saved on the wrong
+// parcel). Audited; ErrNotFound if there's none.
+func (r *LandRecordRepository) Delete(ctx context.Context, actor string, parcelID uuid.UUID, surveyKey string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	before, err := scanLandRecordKeyed(tx.QueryRow(ctx, `SELECT `+landRecordCols+`, survey_key FROM land_records
+		WHERE land_parcel_id = $1 AND survey_key = $2 FOR UPDATE`, parcelID, surveyKey))
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM land_records WHERE id = $1`, before.ID); err != nil {
+		return err
+	}
+	if err := writeAudit(ctx, tx, "land_records", before.ID, "delete", actor, before, nil); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -121,10 +159,10 @@ func scanLandMutations(row rowScanner) (*domain.LandMutations, error) {
 	return &m, nil
 }
 
-func scanLandRecord(row rowScanner) (*domain.LandRecord, error) {
+func scanLandRecordKeyed(row rowScanner) (*domain.LandRecord, error) {
 	var rec domain.LandRecord
 	var data []byte
-	err := row.Scan(&rec.ID, &rec.LandParcelID, &data, &rec.ReadBy, &rec.ConfirmedBy, &rec.ConfirmedAt, &rec.CreatedAt, &rec.UpdatedAt)
+	err := row.Scan(&rec.ID, &rec.LandParcelID, &data, &rec.ReadBy, &rec.ConfirmedBy, &rec.ConfirmedAt, &rec.CreatedAt, &rec.UpdatedAt, &rec.SurveyKey)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, domain.ErrNotFound

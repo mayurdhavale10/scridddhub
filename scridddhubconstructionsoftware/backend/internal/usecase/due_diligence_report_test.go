@@ -7,6 +7,28 @@ import (
 	"github.com/scridddhub/backend/internal/domain"
 )
 
+// A parcel on two survey numbers with one 7/12 in: the other is still to collect, and the 7/12
+// document isn't asked for again.
+func TestReportRequirements_MissingSurveyPiece(t *testing.T) {
+	lat := 19.25
+	s := &ReportSections{
+		Village: "Varap", SurveyNumber: "42/3, 42/4/2", Latitude: &lat, Longitude: &lat,
+		SevenTwelves:       []ReportSevenTwelve{{Data: domain.SevenTwelve{SurveyNumber: "42/3"}}},
+		SevenTwelveSummary: &ReportSevenTwelveSummary{Missing: []string{"42/4/2"}},
+		LegalCheckStarted:  true,
+		Documents:          []domain.LegalDocument{{DocumentType: "7/12 Extract", Status: domain.DocumentStatusPending}},
+	}
+	var sevenTwelve []string
+	for _, r := range reportRequirements(s) {
+		if strings.Contains(r.Item, "7/12") {
+			sevenTwelve = append(sevenTwelve, r.Item)
+		}
+	}
+	if len(sevenTwelve) != 1 || sevenTwelve[0] != "7/12 for survey 42/4/2, read and checked" {
+		t.Errorf("7/12 items = %q", sevenTwelve)
+	}
+}
+
 func TestReportRequirements_GapsBecomeFetchLines(t *testing.T) {
 	lat := 19.15
 	s := &ReportSections{
@@ -27,7 +49,7 @@ func TestReportRequirements_GapsBecomeFetchLines(t *testing.T) {
 		}
 		return nil
 	}
-	if r := find("7/12"); r == nil || !r.InQuick || r.Who != "team" || !strings.Contains(r.Source, "Mahabhumi") {
+	if r := find("7/12"); r == nil || !r.InQuick || r.Who != "team" || !strings.Contains(strings.ToLower(r.Source), "mahabhumi") {
 		t.Errorf("7/12 should be fetched by the team from Mahabhumi in a Quick Screen, got %+v", r)
 	}
 	if r := find("litigation"); r == nil || r.InQuick || !strings.Contains(r.Source, "eCourts") {

@@ -67,17 +67,18 @@ func (u *LandParcelUsecase) SetLocation(ctx context.Context, actor string, id uu
 	return u.repo.SetLocation(ctx, actor, id, lat, lng, source)
 }
 
-// SetLandRecord records the district, taluka, village and survey/gat number that identify the
-// parcel on its 7/12. All four are needed for any land record lookup.
+// SetLandRecord records the district, taluka, village and survey/gat number(s) that identify the
+// parcel on its 7/12s. All four are needed for any land record lookup. Land spanning several
+// survey numbers lists them comma-separated ("42/3, 42/4/2"); they're stored in that form.
 func (u *LandParcelUsecase) SetLandRecord(ctx context.Context, actor string, id uuid.UUID, district, taluka, village, surveyNumber string) (*domain.LandParcel, error) {
 	district, taluka, village = strings.TrimSpace(district), strings.TrimSpace(taluka), strings.TrimSpace(village)
-	surveyNumber = strings.TrimSpace(surveyNumber)
 	if district == "" || taluka == "" || village == "" {
 		return nil, fmt.Errorf("district, taluka and village are all required")
 	}
-	if err := domain.ValidateSurveyNumber(surveyNumber); err != nil {
+	if err := domain.ValidateSurveyNumbers(surveyNumber); err != nil {
 		return nil, err
 	}
+	surveyNumber = strings.Join(domain.SplitSurveyNumbers(surveyNumber), ", ")
 	return u.repo.SetLandRecord(ctx, actor, id, district, taluka, village, surveyNumber)
 }
 
