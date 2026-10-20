@@ -180,6 +180,18 @@ func reportVerdictUserMessage(s *usecase.ReportSections) string {
 		}
 		w("- %s (%s) %s", x.Name, kind, d)
 	}
+	if bc := s.BuilderCalc; bc != nil {
+		if bc.Error != "" {
+			w("G. BUILDER VIEW: not worked out (%s).", bc.Error)
+		} else {
+			w("G. BUILDER VIEW (residual land value from our team's inputs, which are estimates; %.0f sq ft buildable, carpet ratio %.2f, soft costs %.0f%%, builder profit %.0f%% of sales; sources: %s):",
+				bc.BuildableSqft, bc.Inputs.CarpetRatio, bc.Inputs.SoftCostPct*100, bc.Inputs.ProfitPct*100, orUnknown(bc.Inputs.Sources))
+			for _, sc := range bc.Scenarios {
+				w("- %s: flats at Rs %d/sq ft carpet, construction Rs %d/sq ft: land worth Rs %d to a builder (break-even flat price Rs %d/sq ft).",
+					sc.Name, sc.SaleRate, sc.BuildCost, sc.LandValue, sc.BreakEvenRate)
+			}
+		}
+	}
 	if s.Valued && s.ValueLikelyRupees != nil {
 		if s.ValueIndicative {
 			w("G. VALUATION: no registered sales or government rate for this area, so there is NO reliable value yet. Don't judge the asking price; treat the valuation as open.")

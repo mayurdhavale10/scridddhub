@@ -27,7 +27,7 @@ const reportSelectCols = `
 	COALESCE(verdict, ''), COALESCE(verdict_summary, ''), fix_list,
 	COALESCE(verdict_source, ''), COALESCE(verdict_model, ''),
 	COALESCE(advocate_name, ''), COALESCE(advocate_enrolment, ''), finalised_at, frozen_report,
-	created_at, updated_at, COALESCE(planning_authority, ''), road_width_m
+	created_at, updated_at, COALESCE(planning_authority, ''), road_width_m, builder_calc, COALESCE(issued_by, '')
 `
 
 func nullable(s string) *string {
@@ -104,7 +104,7 @@ func (r *DueDiligenceReportRepository) Update(ctx context.Context, actor string,
 			dp_zone = $7, dp_reservation = $8, base_fsi = $9, max_fsi = $10, development_note = $11,
 			verdict = $12, verdict_summary = $13, fix_list = $14::jsonb, verdict_source = $15, verdict_model = $16,
 			advocate_name = $17, advocate_enrolment = $18, finalised_at = $19, frozen_report = $20::jsonb,
-			planning_authority = $21, road_width_m = $22,
+			planning_authority = $21, road_width_m = $22, issued_by = $23,
 			updated_at = now()
 		WHERE id = $1
 		RETURNING updated_at
@@ -112,7 +112,7 @@ func (r *DueDiligenceReportRepository) Update(ctx context.Context, actor string,
 		nullable(rep.DPZone), nullable(rep.DPReservation), rep.BaseFSI, rep.MaxFSI, nullable(rep.DevelopmentNote),
 		nullable(rep.Verdict), nullable(rep.VerdictSummary), string(fix), nullable(rep.VerdictSource), nullable(rep.VerdictModel),
 		nullable(rep.AdvocateName), nullable(rep.AdvocateEnrolment), rep.FinalisedAt, frozen,
-		nullable(rep.PlanningAuthority), rep.RoadWidthM)
+		nullable(rep.PlanningAuthority), rep.RoadWidthM, nullable(rep.IssuedBy))
 	if err := row.Scan(&rep.UpdatedAt); err != nil {
 		return err
 	}
@@ -124,7 +124,7 @@ func (r *DueDiligenceReportRepository) Update(ctx context.Context, actor string,
 
 func scanReport(row rowScanner) (*domain.DueDiligenceReport, error) {
 	var rep domain.DueDiligenceReport
-	var fix, frozen []byte
+	var fix, frozen, calc []byte
 	err := row.Scan(&rep.ID, &rep.LandParcelID, &rep.Tier, &rep.Status,
 		&rep.OccupancyClass, &rep.NAStatus, &rep.TenancyRemarks, &rep.CRZForestESZ,
 		&rep.DPZone, &rep.DPReservation,
@@ -132,7 +132,7 @@ func scanReport(row rowScanner) (*domain.DueDiligenceReport, error) {
 		&rep.Verdict, &rep.VerdictSummary, &fix,
 		&rep.VerdictSource, &rep.VerdictModel,
 		&rep.AdvocateName, &rep.AdvocateEnrolment, &rep.FinalisedAt, &frozen,
-		&rep.CreatedAt, &rep.UpdatedAt, &rep.PlanningAuthority, &rep.RoadWidthM)
+		&rep.CreatedAt, &rep.UpdatedAt, &rep.PlanningAuthority, &rep.RoadWidthM, &calc, &rep.IssuedBy)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, domain.ErrNotFound
@@ -145,5 +145,42 @@ func scanReport(row rowScanner) (*domain.DueDiligenceReport, error) {
 	if len(frozen) > 0 {
 		rep.FrozenReport = frozen
 	}
+	if len(calc) > 0 {
+		rep.BuilderCalc = &domain.BuilderCalcInputs{}
+		if err := json.Unmarshal(calc, rep.BuilderCalc); err != nil {
+			return nil, err
+		}
+	}
 	return &rep, nil
+}
+
+// SetBuilderCalc saves (or, with nil, clears) the report's builder calculation inputs. Audited.
+func (r *DueDiligenceReportRepository) SetBuilderCalc(ctx context.Context, actor string, id uuid.UUID, calc *domain.BuilderCalcInputs) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	before, err := scanReport(tx.QueryRow(ctx, `SELECT `+reportSelectCols+` FROM due_diligence_reports WHERE id = $1 FOR UPDATE`, id))
+	if err != nil {
+		return err
+	}
+	var data *string
+	if calc != nil {
+		b, err := json.Marshal(calc)
+		if err != nil {
+			return err
+		}
+		s := string(b)
+		data = &s
+	}
+	if _, err := tx.Exec(ctx, `UPDATE due_diligence_reports SET builder_calc = $2::jsonb, updated_at = now() WHERE id = $1`, id, data); err != nil {
+		return err
+	}
+	after := *before
+	after.BuilderCalc = calc
+	if err := writeAudit(ctx, tx, "due_diligence_reports", id, "update", actor, before, &after); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }

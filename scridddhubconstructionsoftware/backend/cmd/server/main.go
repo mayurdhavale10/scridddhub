@@ -179,6 +179,8 @@ func main() {
 	mux.HandleFunc("GET /reports/{reportID}/pdf", reportHandler.Document)
 	mux.HandleFunc("PUT /reports/{reportID}", reportHandler.Update)
 	mux.HandleFunc("POST /reports/{reportID}/draft-verdict", reportHandler.DraftVerdict)
+	mux.HandleFunc("PUT /reports/{reportID}/builder-calc", reportHandler.SetBuilderCalc)
+	mux.HandleFunc("DELETE /reports/{reportID}/builder-calc", reportHandler.SetBuilderCalc)
 	mux.HandleFunc("POST /reports/{reportID}/finalise", reportHandler.Finalise)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

@@ -365,6 +365,49 @@ flowchart LR
 
 Reports frozen before 2026-10-15 kept their single 7/12; it's read into the list when opened.
 
+### 12. What the land is worth to a builder (residual land value)
+A builder values land by what they can build and sell on it. Section G now has that view, from
+inputs our team types on the report (Edit on "What it's worth to a builder"):
+
+```mermaid
+flowchart LR
+    A[Buildable sq ft<br/>MahaRERA or FSI band] --> C[× carpet share<br/>× flat price]
+    C --> R[Sales]
+    R --> L[− construction<br/>− approvals, marketing, finance %<br/>− builder's profit %]
+    L --> V[= land worth to a builder<br/>pessimistic · likely · optimistic]
+```
+
+- **Three scenarios, never one number:** pessimistic (low prices, high costs), likely,
+  optimistic. The inputs are estimates and the answer swings with them; a negative result is
+  shown as "below ₹0", meaning the project doesn't pay for the land.
+- **Break-even flat price** per scenario: the price at which the land is worth ₹0.
+- **Sources are a required field** on the form and print under the table.
+- Stored as `builder_calc` (migration 054), saved with `PUT /reports/{id}/builder-calc` (kept apart
+  from `PUT /reports/{id}` so saving sections D–H can't wipe it); worked out when the report is
+  read, so it always matches its inputs. The AI verdict sees all three scenarios.
+
+**Varap (2026-10-16):** 22,508 sq ft buildable (MahaRERA), 72% carpet, flats ₹7,000 / 8,500 / 9,500
+(Varap listings), construction ₹3,300 / 2,900 / 2,500 (estimator sites; a contractor quote would
+be better), costs 15%, profit 20%: **below ₹0 / ₹2.43 Cr / ₹4.38 Cr**; break-even flat price
+about ₹6,200 per sq ft in the likely case. For comparison: government rate ₹30.4 lakh, AI market
+estimate ₹92 lakh.
+
+### 13. Sign-off, fingerprint, one draft per tier (2026-10-17)
+- **Sign-off block in the PDF.** A Quick Screen is issued by a named ScridddHub team member
+  (required: the app asks "Issued by (your full name)" and the server refuses without it). A Full
+  report shows the advocate (name, Bar Council enrolment) and who prepared it. Each box has a
+  signature line, where a DSC or Aadhaar eSign signature will go later (a paid service; not
+  built).
+- **Fingerprint.** Once issued or signed, the report carries the first 16 hex digits of the SHA-256
+  of its frozen contents ("3F9A 21C0 7B44 E812"), printed on the PDF with the full report ID and
+  returned by the API. Anyone can ask ScridddHub to compare; an edited copy won't match. Worked out
+  from the frozen JSON, so it's never stored separately.
+- **One draft per tier per parcel.** Ordering a tier that already has an open draft returns that
+  draft (server) and the button reads "Open your … draft" (app); a new order asks for
+  confirmation. Six empty duplicates had been created on Varap by repeated taps.
+- **"Still to collect" lines are tappable**, each opening where it's filled in (7/12, Ferfar, Legal
+  & RERA check, section D/E/H editors).
+
 **Tested 2026-10-15** on a throwaway parcel with the two real Varap PDFs: both saved side by side,
 2,070 sq m, three holders; removing 42/4/2 brought back "No 7/12 yet for 42/4/2"; the report
 filled Class I and NA granted once both were in; the PDF showed both sections and the summary.

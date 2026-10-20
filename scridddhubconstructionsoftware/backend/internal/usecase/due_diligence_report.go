@@ -24,6 +24,7 @@ type DueDiligenceReportRepository interface {
 	Get(ctx context.Context, id uuid.UUID) (*domain.DueDiligenceReport, error)
 	ListByParcel(ctx context.Context, parcelID uuid.UUID) ([]*domain.DueDiligenceReport, error)
 	Update(ctx context.Context, actor string, r *domain.DueDiligenceReport) error
+	SetBuilderCalc(ctx context.Context, actor string, id uuid.UUID, calc *domain.BuilderCalcInputs) error
 }
 
 type LegalCheckGetter interface {
@@ -60,7 +61,7 @@ type ReportSections struct {
 
 	// The parcel's confirmed 7/12s, one per survey number it spans: holders, tenure, other rights
 	// and each one's warning signs. SevenTwelveSummary reads them side by side.
-	SevenTwelves       []ReportSevenTwelve        `json:"seven_twelves"`
+	SevenTwelves       []ReportSevenTwelve       `json:"seven_twelves"`
 	SevenTwelveSummary *ReportSevenTwelveSummary `json:"seven_twelve_summary,omitempty"`
 	// SevenTwelve is the single 7/12 of reports frozen before 2026-10-15; read into SevenTwelves.
 	SevenTwelve *ReportSevenTwelve `json:"seven_twelve,omitempty"`
@@ -99,6 +100,10 @@ type ReportSections struct {
 	DevelopmentNote   string        `json:"development_note,omitempty"`
 	Infrastructure    []ReportInfra `json:"infrastructure"`
 
+	// G. The builder's view: what the land is worth to a developer (residual land value), from the
+	// inputs our team entered. nil until entered.
+	BuilderCalc *ReportBuilderCalc `json:"builder_calc,omitempty"`
+
 	// G. Valuation (from the Valuation Summary)
 	Valued             bool   `json:"valued"`
 	ValueLowRupees     *int64 `json:"value_low_rupees,omitempty"`
@@ -120,6 +125,7 @@ type ReportSections struct {
 	VerdictModel      string     `json:"verdict_model,omitempty"`
 	AdvocateName      string     `json:"advocate_name,omitempty"`
 	AdvocateEnrolment string     `json:"advocate_enrolment,omitempty"`
+	IssuedBy          string     `json:"issued_by,omitempty"` // ScridddHub team member who issued it
 	FinalisedAt       *time.Time `json:"finalised_at,omitempty"`
 
 	// Still to collect: every item the report doesn't have yet, with where it comes from and who
@@ -155,6 +161,16 @@ type ReportSevenTwelve struct {
 	AreaAcres   *float64                 `json:"area_acres,omitempty"` // this 7/12's area, converted from its unit
 	ConfirmedBy string                   `json:"confirmed_by"`
 	ConfirmedAt time.Time                `json:"confirmed_at"`
+}
+
+// ReportBuilderCalc is the builder calculation: the inputs as entered, the buildable area used, and
+// the three scenarios. Error says why there are no scenarios (e.g. no buildable area yet).
+type ReportBuilderCalc struct {
+	Inputs        domain.BuilderCalcInputs `json:"inputs"`
+	BuildableSqft float64                  `json:"buildable_sqft"`
+	AreaSource    string                   `json:"area_source"` // "entered" or "FSI band"
+	Scenarios     []domain.BuilderScenario `json:"scenarios"`
+	Error         string                   `json:"error,omitempty"`
 }
 
 // ReportSevenTwelveSummary is what the parcel's 7/12s say together (domain.SevenTwelveSet).
@@ -246,6 +262,18 @@ func (u *DueDiligenceReportUsecase) Create(ctx context.Context, actor string, pa
 	r := &domain.DueDiligenceReport{LandParcelID: parcelID, Tier: tier, Status: domain.ReportStatusDraft}
 	if err := r.Validate(); err != nil {
 		return nil, err
+	}
+	// One draft per tier per parcel: ordering again returns the draft already open, so a double
+	// tap can't leave empty duplicates (six were created on Varap on 2026-10-17). A new one can be
+	// ordered once the draft is signed or issued.
+	existing, err := u.reports.ListByParcel(ctx, parcelID)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range existing {
+		if e.Tier == r.Tier && !e.Final() {
+			return e, nil
+		}
 	}
 	if err := u.reports.Create(ctx, actor, r); err != nil {
 		return nil, err
@@ -444,7 +472,7 @@ func (u *DueDiligenceReportUsecase) DraftVerdict(ctx context.Context, actor stri
 }
 
 // Finalise signs (Full, needs the advocate) or issues (Quick) the report and freezes its sections.
-func (u *DueDiligenceReportUsecase) Finalise(ctx context.Context, actor string, id uuid.UUID, advocateName, enrolment string) (*domain.DueDiligenceReport, error) {
+func (u *DueDiligenceReportUsecase) Finalise(ctx context.Context, actor string, id uuid.UUID, advocateName, enrolment, issuedBy string) (*domain.DueDiligenceReport, error) {
 	r, err := u.reports.Get(ctx, id)
 	if err != nil {
 		return nil, err
@@ -456,7 +484,7 @@ func (u *DueDiligenceReportUsecase) Finalise(ctx context.Context, actor string, 
 	now := u.now()
 	// Compose with the sign-off fields already set so the frozen copy carries them.
 	preview := *r
-	preview.AdvocateName, preview.AdvocateEnrolment, preview.FinalisedAt = advocateName, enrolment, &now
+	preview.AdvocateName, preview.AdvocateEnrolment, preview.IssuedBy, preview.FinalisedAt = advocateName, enrolment, strings.TrimSpace(issuedBy), &now
 	s, err := u.compose(ctx, &preview)
 	if err != nil {
 		return nil, err
@@ -469,7 +497,7 @@ func (u *DueDiligenceReportUsecase) Finalise(ctx context.Context, actor string, 
 	if err != nil {
 		return nil, err
 	}
-	if err := r.Finalise(advocateName, enrolment, frozen, now); err != nil {
+	if err := r.Finalise(advocateName, enrolment, issuedBy, frozen, now); err != nil {
 		return nil, err
 	}
 	if err := u.reports.Update(ctx, actor, r); err != nil {
@@ -496,7 +524,7 @@ func (u *DueDiligenceReportUsecase) compose(ctx context.Context, r *domain.DueDi
 		BaseFSI: r.BaseFSI, MaxFSI: r.MaxFSI, DevelopmentNote: r.DevelopmentNote,
 		Verdict: r.Verdict, VerdictSummary: r.VerdictSummary, FixList: r.FixList,
 		VerdictSource: r.VerdictSource, VerdictModel: r.VerdictModel,
-		AdvocateName: r.AdvocateName, AdvocateEnrolment: r.AdvocateEnrolment, FinalisedAt: r.FinalisedAt,
+		AdvocateName: r.AdvocateName, AdvocateEnrolment: r.AdvocateEnrolment, IssuedBy: r.IssuedBy, FinalisedAt: r.FinalisedAt,
 	}
 	for dst, src := range map[*string]*string{&s.Village: p.Village, &s.Taluka: p.Taluka, &s.District: p.District, &s.SurveyNumber: p.SurveyNumber} {
 		if src != nil {
@@ -555,7 +583,7 @@ func (u *DueDiligenceReportUsecase) compose(ctx context.Context, r *domain.DueDi
 		s.ValueIndicative = !fa.Basis.HasMarketEvidence()
 		s.ValueBasis = fa.ComparableSalesNote
 		if fa.Basis.ReadyReckonerPerAcre != nil {
-			s.ValueBasis += fmt.Sprintf("; government rate ₹%d per acre (%s)", *fa.Basis.ReadyReckonerPerAcre, fa.Basis.ReadyReckonerYear)
+			s.ValueBasis += fmt.Sprintf("; government rate ₹%s per acre (%s)", domain.IndianDigits(*fa.Basis.ReadyReckonerPerAcre), fa.Basis.ReadyReckonerYear)
 		}
 	} else if err != nil && !errors.Is(err, domain.ErrNotFound) {
 		log.Printf("report %s: valuation: %v", r.ID, err)
@@ -611,8 +639,46 @@ func (u *DueDiligenceReportUsecase) compose(ctx context.Context, r *domain.DueDi
 		}
 	}
 
+	if r.BuilderCalc != nil {
+		bc := &ReportBuilderCalc{Inputs: *r.BuilderCalc, Scenarios: []domain.BuilderScenario{}, AreaSource: "entered"}
+		var fsiArea float64
+		if s.BuildableSqft != nil {
+			fsiArea = float64(*s.BuildableSqft)
+		}
+		if r.BuilderCalc.BuildableSqft == 0 {
+			bc.AreaSource = "FSI band"
+		}
+		if sc, area, err := r.BuilderCalc.Scenarios(fsiArea); err != nil {
+			bc.Error = err.Error()
+		} else {
+			bc.Scenarios, bc.BuildableSqft = sc, area
+		}
+		s.BuilderCalc = bc
+	}
+
 	s.Requirements = reportRequirements(s)
 	return s, nil
+}
+
+// SetBuilderCalc saves the builder calculation inputs on a draft report (nil clears them).
+func (u *DueDiligenceReportUsecase) SetBuilderCalc(ctx context.Context, actor string, id uuid.UUID, calc *domain.BuilderCalcInputs) (*domain.DueDiligenceReport, error) {
+	r, err := u.reports.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if r.Final() {
+		return nil, domain.ErrReportFinalised
+	}
+	if calc != nil {
+		if err := calc.Validate(); err != nil {
+			return nil, err
+		}
+	}
+	if err := u.reports.SetBuilderCalc(ctx, actor, id, calc); err != nil {
+		return nil, err
+	}
+	r.BuilderCalc = calc
+	return r, nil
 }
 
 // reportRequirements turns every gap into a line saying where the item comes from and who gets

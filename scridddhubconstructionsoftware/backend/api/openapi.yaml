@@ -1211,6 +1211,46 @@ paths:
               schema:
                 $ref: "#/components/schemas/ReportSummary"
 
+  /reports/{reportID}/builder-calc:
+    put:
+      operationId: setReportBuilderCalc
+      summary: Save the builder calculation's inputs (residual land value) on a draft report
+      description: >-
+        Kept apart from PUT /reports/{id} so saving sections D–H can't wipe it. The three
+        scenarios are worked out when the report is read (sections.builder_calc).
+      parameters:
+        - name: reportID
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BuilderCalcInputs" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportSummary" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    delete:
+      operationId: clearReportBuilderCalc
+      summary: Clear the builder calculation
+      parameters:
+        - name: reportID
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportSummary" }
+
   /reports/{reportID}/finalise:
     post:
       operationId: finaliseReport
@@ -1233,6 +1273,9 @@ paths:
                   type: string
                 advocate_enrolment:
                   type: string
+                issued_by:
+                  type: string
+                  description: The ScridddHub team member issuing it (required for a Quick Screen)
       responses:
         "200":
           description: OK
@@ -3341,6 +3384,11 @@ components:
           type: string
         finalised_at:
           type: string
+        issued_by:
+          type: string
+        fingerprint:
+          type: string
+          description: First 16 hex digits of the SHA-256 of the frozen report, once final (printed on the PDF)
 
     ReportDetail:
       allOf:
@@ -3628,6 +3676,50 @@ components:
           type: array
           items: { type: string }
 
+    BuilderCalcInputs:
+      type: object
+      description: Rates in ₹ per sq ft; percentages as shares of sales (0.15 = 15%).
+      required: [buildable_sqft, carpet_ratio, sale_rate_low, sale_rate_likely, sale_rate_high,
+        build_cost_low, build_cost_likely, build_cost_high, soft_cost_pct, profit_pct, sources]
+      properties:
+        buildable_sqft: { type: number, description: "Built-up area allowed; 0 = use the FSI band's" }
+        carpet_ratio: { type: number, description: "Share of built-up sold as carpet, e.g. 0.72" }
+        sale_rate_low: { type: integer, description: "Flat price per sq ft carpet" }
+        sale_rate_likely: { type: integer }
+        sale_rate_high: { type: integer }
+        build_cost_low: { type: integer, description: "Construction per sq ft built-up" }
+        build_cost_likely: { type: integer }
+        build_cost_high: { type: integer }
+        soft_cost_pct: { type: number, description: "Approvals, premiums, marketing, finance" }
+        profit_pct: { type: number, description: "Developer's margin" }
+        sources: { type: string }
+
+    BuilderScenario:
+      type: object
+      required: [name, sale_rate, build_cost, revenue, construction, soft_costs, profit, land_value, break_even_rate]
+      properties:
+        name: { type: string, enum: [pessimistic, likely, optimistic] }
+        sale_rate: { type: integer }
+        build_cost: { type: integer }
+        revenue: { type: integer }
+        construction: { type: integer }
+        soft_costs: { type: integer }
+        profit: { type: integer }
+        land_value: { type: integer, description: "Can be negative: the project doesn't pay for the land" }
+        break_even_rate: { type: integer, description: "Flat price per sq ft carpet at which the land is worth ₹0" }
+
+    ReportBuilderCalc:
+      type: object
+      required: [inputs, buildable_sqft, area_source, scenarios]
+      properties:
+        inputs: { $ref: "#/components/schemas/BuilderCalcInputs" }
+        buildable_sqft: { type: number }
+        area_source: { type: string, description: "entered or FSI band" }
+        scenarios:
+          type: array
+          items: { $ref: "#/components/schemas/BuilderScenario" }
+        error: { type: string, description: "Why there are no scenarios, e.g. no buildable area yet" }
+
     ReportFSI:
       type: object
       required: [basic, premium, tdr, max, max_with_ancillary, source]
@@ -3689,6 +3781,8 @@ components:
             $ref: "#/components/schemas/ReportSevenTwelve"
         seven_twelve_summary:
           $ref: "#/components/schemas/ReportSevenTwelveSummary"
+        builder_calc:
+          $ref: "#/components/schemas/ReportBuilderCalc"
         esz:
           type: array
           items:
@@ -3803,6 +3897,8 @@ components:
         advocate_name:
           type: string
         advocate_enrolment:
+          type: string
+        issued_by:
           type: string
         finalised_at:
           type: string

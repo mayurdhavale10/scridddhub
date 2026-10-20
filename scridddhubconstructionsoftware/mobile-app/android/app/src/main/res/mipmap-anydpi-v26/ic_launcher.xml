@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App icon (Android 8+): the green leaf from src/assets/leaf.png on white. The launcher crops it
+     to the phone's icon shape; the leaf sits inside the 66dp safe zone so no shape cuts it. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background"/>
+    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+</adaptive-icon>

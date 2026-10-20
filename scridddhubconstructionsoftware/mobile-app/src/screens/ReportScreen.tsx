@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -228,6 +229,28 @@ function Field({
   );
 }
 
+// The builder calculation form. Blank means "use the default"; the defaults are only a starting
+// point and every one is shown for the team to change.
+type CalcKey =
+  | 'buildable_sqft' | 'carpet_pct' | 'sale_low' | 'sale_likely' | 'sale_high'
+  | 'cost_low' | 'cost_likely' | 'cost_high' | 'soft_pct' | 'profit_pct' | 'sources';
+const CALC_DEFAULTS: Record<CalcKey, string> = {
+  buildable_sqft: '', carpet_pct: '72', sale_low: '', sale_likely: '', sale_high: '',
+  cost_low: '2500', cost_likely: '2900', cost_high: '3300', soft_pct: '15', profit_pct: '20', sources: '',
+};
+type BuilderInputs = components['schemas']['BuilderCalcInputs'];
+function calcFrom(i?: BuilderInputs): Record<CalcKey, string> {
+  if (!i) return CALC_DEFAULTS;
+  return {
+    buildable_sqft: i.buildable_sqft ? String(i.buildable_sqft) : '', carpet_pct: String(Math.round(i.carpet_ratio * 100)),
+    sale_low: String(i.sale_rate_low), sale_likely: String(i.sale_rate_likely), sale_high: String(i.sale_rate_high),
+    cost_low: String(i.build_cost_low), cost_likely: String(i.build_cost_likely), cost_high: String(i.build_cost_high),
+    soft_pct: String(Math.round(i.soft_cost_pct * 100)), profit_pct: String(Math.round(i.profit_pct * 100)), sources: i.sources,
+  };
+}
+const SCENARIO_LABEL: Record<string, string> = { pessimistic: 'Pessimistic', likely: 'Likely', optimistic: 'Optimistic' };
+const landValue = (v: number) => (v < 0 ? `Below ₹0 (${crore(-v)} short)` : crore(v));
+
 function SheetButtons({ onCancel, onSave, saveLabel }: { onCancel: () => void; onSave: () => void; saveLabel?: string }) {
   return (
     <View style={styles.sheetActions}>
@@ -248,9 +271,12 @@ export function ReportScreen({ reportId, onBack, onOpenLegalCheck, onOpenSevenTw
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [sheet, setSheet] = useState<'land' | 'dev' | 'verdict' | 'sign' | null>(null);
+  const [sheet, setSheet] = useState<'land' | 'dev' | 'verdict' | 'sign' | 'builder' | null>(null);
+  // The builder calculation's inputs, as typed (strings until saved).
+  const [calc, setCalc] = useState<Record<CalcKey, string>>(CALC_DEFAULTS);
   const [draft, setDraft] = useState<Edits | null>(null);
   const [advocate, setAdvocate] = useState({ name: '', enrolment: '' });
+  const [issuedBy, setIssuedBy] = useState('');
 
   const load = useCallback(async () => {
     const { data } = await api.GET('/reports/{reportID}', { params: { path: { reportID: reportId } } });
@@ -275,6 +301,29 @@ export function ReportScreen({ reportId, onBack, onOpenLegalCheck, onOpenSevenTw
     setSheet(null);
   };
 
+  const saveCalc = async () => {
+    setBusy('save');
+    setError(null);
+    const n = (k: CalcKey) => parseFloat(calc[k]) || 0;
+    const { error: e } = await api.PUT('/reports/{reportID}/builder-calc', {
+      params: { path: { reportID: reportId } },
+      body: {
+        buildable_sqft: n('buildable_sqft'), carpet_ratio: n('carpet_pct') / 100,
+        sale_rate_low: n('sale_low'), sale_rate_likely: n('sale_likely'), sale_rate_high: n('sale_high'),
+        build_cost_low: n('cost_low'), build_cost_likely: n('cost_likely'), build_cost_high: n('cost_high'),
+        soft_cost_pct: n('soft_pct') / 100, profit_pct: n('profit_pct') / 100, sources: calc.sources,
+      },
+    });
+    if (e) {
+      setError((e as { error?: string }).error ?? 'Could not save. Try again.');
+      setBusy(null);
+      return;
+    }
+    await load();
+    setBusy(null);
+    setSheet(null);
+  };
+
   const draftVerdict = async () => {
     setBusy('ai');
     setError(null);
@@ -291,15 +340,23 @@ export function ReportScreen({ reportId, onBack, onOpenLegalCheck, onOpenSevenTw
     setError(null);
     const { error: e } = await api.POST('/reports/{reportID}/finalise', {
       params: { path: { reportID: reportId } },
-      body: { advocate_name: advocate.name, advocate_enrolment: advocate.enrolment },
+      body: { advocate_name: advocate.name, advocate_enrolment: advocate.enrolment, issued_by: issuedBy },
     });
+    const full = detail?.tier === 'full';
     if (e) {
+      // Keep the form open so the reason shows right where the person tapped.
       const msg = (e as { error?: string }).error;
-      setError(msg ? `Not signed: ${msg}.` : 'Could not finalise. Try again.');
+      setError(msg ? `Not ${full ? 'signed' : 'issued'}: ${msg}.` : 'Could not finalise. Try again.');
+      setBusy(null);
+      return;
     }
     await load();
     setBusy(null);
     setSheet(null);
+    Alert.alert(
+      full ? 'Report signed' : 'Quick Screen issued',
+      'It’s final now and can’t change. Download the PDF from the top of the report; it carries the sign-off and a fingerprint of its contents.',
+    );
   };
 
   if (loading || !detail) {
@@ -315,6 +372,19 @@ export function ReportScreen({ reportId, onBack, onOpenLegalCheck, onOpenSevenTw
   // One 7/12 per survey number of the parcel; missing ones are still to collect.
   const sevenTwelves = s.seven_twelves ?? [];
   const missing = s.seven_twelve_summary?.missing ?? [];
+  // Where a "still to collect" line is filled in; undefined if it's done elsewhere (advocate, site).
+  const openFor = (item: string, section: string): (() => void) | undefined => {
+    const i = item.toLowerCase();
+    if (i.includes('7/12')) return onOpenSevenTwelve;
+    if (i.includes('ferfar') || i.includes('mutation') || i.includes('30 years')) return onOpenFerfar;
+    if (section === 'F' || i.includes('maharera') || i.includes('risk') || i.includes('search') || i.includes('litigation') ||
+      i.includes('deed') || i.includes('certificate') || i.includes('receipt') || i.includes('acquisition')) return onOpenLegalCheck;
+    if (section === 'D') return edit('land');
+    if (section === 'E') return edit('dev');
+    if (section === 'G' && i.includes('value')) return onOpenSales;
+    if (section === 'H') return edit('verdict');
+    return undefined;
+  };
   const full = detail.tier === 'full';
   const reqs = s.requirements ?? [];
   // What blocks finishing: a Quick Screen waits for its own items, a Full Report for all of them
@@ -416,11 +486,12 @@ export function ReportScreen({ reportId, onBack, onOpenLegalCheck, onOpenSevenTw
           <View style={styles.card}>
             {reqs.map((r, i) => {
               const later = !full && !r.in_quick;
-              return (
+              // Tapping a line goes to where it's filled in, so nobody has to hunt for the right row.
+              const go = openFor(r.item, r.section);
+              const row = (
                 <Row
-                  key={r.section + r.item}
                   label={`${r.section}. ${r.item}`}
-                  sub={r.source}
+                  sub={go ? `${r.source} · tap to add ›` : r.source}
                   last={i === reqs.length - 1}
                   value={
                     <Pill
@@ -430,6 +501,11 @@ export function ReportScreen({ reportId, onBack, onOpenLegalCheck, onOpenSevenTw
                     />
                   }
                 />
+              );
+              return go ? (
+                <Pressable key={r.section + r.item} onPress={go}>{row}</Pressable>
+              ) : (
+                <React.Fragment key={r.section + r.item}>{row}</React.Fragment>
               );
             })}
           </View>
@@ -626,6 +702,29 @@ export function ReportScreen({ reportId, onBack, onOpenLegalCheck, onOpenSevenTw
         )}
       </Section>
 
+      <Section letter="G" title="What it’s worth to a builder"
+        onEdit={final ? undefined : () => { setCalc(calcFrom(s.builder_calc?.inputs)); setSheet('builder'); }}>
+        {!s.builder_calc ? (
+          <Empty text={final ? 'Not worked out.' : 'What a developer could sell here, minus building costs and profit. Tap Edit to enter flat prices and construction costs.'} />
+        ) : s.builder_calc.error ? (
+          <Empty text={`Not worked out yet: ${s.builder_calc.error}`} />
+        ) : (
+          <>
+            {s.builder_calc.scenarios.map((sc, i) => (
+              <Row key={sc.name} label={SCENARIO_LABEL[sc.name] ?? sc.name}
+                sub={`Flats ₹${sc.sale_rate.toLocaleString('en-IN')}/sq ft · build ₹${sc.build_cost.toLocaleString('en-IN')}/sq ft · break-even ₹${sc.break_even_rate.toLocaleString('en-IN')}`}
+                value={landValue(sc.land_value)} last={i === s.builder_calc!.scenarios.length - 1} />
+            ))}
+            <Text style={styles.cardNote}>
+              {Math.round(s.builder_calc.buildable_sqft).toLocaleString('en-IN')} sq ft buildable ({s.builder_calc.area_source}),
+              {' '}{Math.round(s.builder_calc.inputs.carpet_ratio * 100)}% sold as carpet; costs {Math.round(s.builder_calc.inputs.soft_cost_pct * 100)}%,
+              {' '}profit {Math.round(s.builder_calc.inputs.profit_pct * 100)}% of sales.
+              {s.builder_calc.inputs.sources ? ` Sources: ${s.builder_calc.inputs.sources}` : ''}
+            </Text>
+          </>
+        )}
+      </Section>
+
       <Section letter="H" title="Verdict" onEdit={edit('verdict')}>
         {s.verdict ? (
           <>
@@ -648,7 +747,7 @@ export function ReportScreen({ reportId, onBack, onOpenLegalCheck, onOpenSevenTw
         <Pressable
           style={[styles.primaryBtn, open.length > 0 && styles.disabled]}
           disabled={open.length > 0}
-          onPress={() => (full ? setSheet('sign') : finalise())}>
+          onPress={() => setSheet('sign')}>
           <Text style={styles.primaryBtnText}>{full ? 'Sign report' : 'Issue Quick Screen'}</Text>
         </Pressable>
       ) : null}
@@ -686,6 +785,39 @@ export function ReportScreen({ reportId, onBack, onOpenLegalCheck, onOpenSevenTw
         </Sheet>
       ) : null}
 
+      {sheet === 'builder' ? (
+        <Sheet title="What it’s worth to a builder" onClose={() => setSheet(null)}>
+          <Text style={styles.sheetNote}>
+            Sales minus construction, approvals and the builder’s profit leaves what the land is worth to them. Enter
+            low, likely and high figures; the report shows all three.
+          </Text>
+          <Field label="Buildable area, sq ft built-up (blank = from the FSI band)" numeric value={calc.buildable_sqft}
+            onChange={v => setCalc({ ...calc, buildable_sqft: v })} placeholder={s.buildable_sqft ? String(s.buildable_sqft) : 'e.g. 22508'} />
+          <Field label="Share sold as carpet area (%)" numeric value={calc.carpet_pct} onChange={v => setCalc({ ...calc, carpet_pct: v })} />
+          <Text style={styles.fieldLabel}>Flat price, ₹ per sq ft carpet (low / likely / high)</Text>
+          <View style={styles.row3}>
+            {(['sale_low', 'sale_likely', 'sale_high'] as const).map(k => (
+              <TextInput key={k} style={[styles.input, styles.flex1]} keyboardType="number-pad" value={calc[k]}
+                onChangeText={v => setCalc({ ...calc, [k]: v })} placeholder={k === 'sale_low' ? '7000' : k === 'sale_likely' ? '8500' : '9500'}
+                placeholderTextColor={colors.outline} />
+            ))}
+          </View>
+          <Text style={styles.fieldLabel}>Construction, ₹ per sq ft built-up (low / likely / high)</Text>
+          <View style={styles.row3}>
+            {(['cost_low', 'cost_likely', 'cost_high'] as const).map(k => (
+              <TextInput key={k} style={[styles.input, styles.flex1]} keyboardType="number-pad" value={calc[k]}
+                onChangeText={v => setCalc({ ...calc, [k]: v })} placeholderTextColor={colors.outline} />
+            ))}
+          </View>
+          <Field label="Approvals, premiums, marketing, finance (% of sales)" numeric value={calc.soft_pct} onChange={v => setCalc({ ...calc, soft_pct: v })} />
+          <Field label="Builder’s profit (% of sales)" numeric value={calc.profit_pct} onChange={v => setCalc({ ...calc, profit_pct: v })} />
+          <Field label="Where these numbers come from" multiline value={calc.sources} onChange={v => setCalc({ ...calc, sources: v })}
+            placeholder="e.g. Flat prices: 99acres Varap listings, Oct 2026. Construction: contractor quote." />
+          {error ? <Text style={styles.sheetNote}>{error}</Text> : null}
+          <SheetButtons onCancel={() => setSheet(null)} onSave={saveCalc} saveLabel={busy === 'save' ? 'Saving…' : 'Save'} />
+        </Sheet>
+      ) : null}
+
       {sheet === 'verdict' && draft ? (
         <Sheet title="Verdict" onClose={() => setSheet(null)}>
           <Chips options={{ go: 'Go', fix_first: 'Fix first', no_go: 'Don’t buy' }}
@@ -701,13 +833,22 @@ export function ReportScreen({ reportId, onBack, onOpenLegalCheck, onOpenSevenTw
       ) : null}
 
       {sheet === 'sign' ? (
-        <Sheet title="Sign report" onClose={() => setSheet(null)}>
+        <Sheet title={full ? 'Sign report' : 'Issue Quick Screen'} onClose={() => setSheet(null)}>
           <Text style={styles.sheetNote}>
-            The advocate signs the title opinion. After signing, the report is frozen: nothing in it can change.
+            {full
+              ? 'The advocate signs the title opinion. After signing, the report is frozen: nothing in it can change.'
+              : 'You issue it for ScridddHub. After issuing, the report is frozen: nothing in it can change, and the PDF carries your name, the date and a fingerprint of its contents.'}
           </Text>
-          <Field label="Advocate's name" value={advocate.name} onChange={v => setAdvocate({ ...advocate, name: v })} placeholder="Adv. full name" />
-          <Field label="Bar Council enrolment number" value={advocate.enrolment} onChange={v => setAdvocate({ ...advocate, enrolment: v })} placeholder="e.g. MAH/1234/2015" />
-          <SheetButtons onCancel={() => setSheet(null)} onSave={finalise} saveLabel={busy === 'sign' ? 'Signing…' : 'Sign and freeze'} />
+          {full ? (
+            <>
+              <Field label="Advocate's name" value={advocate.name} onChange={v => setAdvocate({ ...advocate, name: v })} placeholder="Adv. full name" />
+              <Field label="Bar Council enrolment number" value={advocate.enrolment} onChange={v => setAdvocate({ ...advocate, enrolment: v })} placeholder="e.g. MAH/1234/2015" />
+            </>
+          ) : null}
+          <Field label={full ? 'Prepared by (ScridddHub, optional)' : 'Issued by (your full name)'} value={issuedBy} onChange={setIssuedBy} placeholder="Full name" />
+          {error ? <Text style={styles.sheetNote}>{error}</Text> : null}
+          <SheetButtons onCancel={() => setSheet(null)} onSave={finalise}
+            saveLabel={busy === 'sign' ? (full ? 'Signing…' : 'Issuing…') : full ? 'Sign and freeze' : 'Issue and freeze'} />
         </Sheet>
       ) : null}
     </ScrollView>
@@ -796,6 +937,8 @@ const styles = StyleSheet.create({
   sheetNote: { fontSize: 13, lineHeight: 18, color: colors.onSurfaceVariant },
   sheetActions: { flexDirection: 'row', gap: 10, marginTop: 6 },
   field: { gap: 4 },
+  row3: { flexDirection: 'row', gap: 8 },
+  flex1: { flex: 1 },
   fieldLabel: { fontSize: 12, fontWeight: '600', color: colors.onSurfaceVariant },
   input: {
     borderWidth: 1,

@@ -42,7 +42,12 @@
   .flag.medium { background: #f5efdc; color: #6f5412; }
   .note { color: #555; font-size: 9pt; margin: 4px 0; }
   .scope { margin-top: 18px; font-size: 8.5pt; color: #666; border-top: 1px solid #ddd; padding-top: 8px; }
-  .sign { margin-top: 14px; padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px; }
+  .signoff { width: 100%; border-collapse: separate; border-spacing: 10px 0; page-break-inside: avoid; }
+  .sigcell { border: 1px solid #ccc; border-radius: 8px; padding: 10px 12px; vertical-align: top; width: 50%; }
+  .sigrole { font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 0.04em; }
+  .signame { font-weight: 600; margin-top: 4px; }
+  .signame.todo { color: #999; font-weight: 400; }
+  .sigline { margin-top: 34px; border-top: 1px solid #999; padding-top: 3px; font-size: 10px; color: #666; }
   .watermark { position: fixed; top: 40%; left: 0; right: 0; text-align: center; font-size: 80pt;
                color: rgba(180, 40, 20, .07); transform: rotate(-30deg); font-weight: 800; z-index: -1; }
 </style>
@@ -179,6 +184,26 @@
 {{else if $s.Valued}}<p class="note todo">No registered sales or government rate on record for this area yet, so no value is given. Registered sale prices for the village and the ready-reckoner rate are being collected.</p>
 {{else}}<p class="note todo">To collect: valuation.</p>{{end}}
 
+{{with $s.BuilderCalc}}
+<h3>What the land is worth to a builder</h3>
+{{if .Error}}<p class="note todo">Not worked out yet: {{.Error}}</p>{{else}}
+<p class="note">What a developer could sell here, minus building and selling costs and their profit. The inputs are
+estimates, so it's shown as three scenarios, not one number.</p>
+<table>
+  <tr><td class="k"></td>{{range .Scenarios}}<td class="v"><b>{{.Name}}</b></td>{{end}}</tr>
+  <tr><td class="k">Flat price (per sq ft carpet)</td>{{range .Scenarios}}<td class="v">{{inr .SaleRate}}</td>{{end}}</tr>
+  <tr><td class="k">Construction (per sq ft built-up)</td>{{range .Scenarios}}<td class="v">{{inr .BuildCost}}</td>{{end}}</tr>
+  <tr><td class="k">Sales</td>{{range .Scenarios}}<td class="v">{{croreV .Revenue}}</td>{{end}}</tr>
+  <tr><td class="k">− Construction</td>{{range .Scenarios}}<td class="v">{{croreV .Construction}}</td>{{end}}</tr>
+  <tr><td class="k">− Approvals, marketing, finance ({{pct .Inputs.SoftCostPct}})</td>{{range .Scenarios}}<td class="v">{{croreV .SoftCosts}}</td>{{end}}</tr>
+  <tr><td class="k">− Builder's profit ({{pct .Inputs.ProfitPct}})</td>{{range .Scenarios}}<td class="v">{{croreV .Profit}}</td>{{end}}</tr>
+  <tr><td class="k"><b>= Land worth to a builder</b></td>{{range .Scenarios}}<td class="v"><b>{{croreV .LandValue}}</b></td>{{end}}</tr>
+  <tr><td class="k">Break-even flat price</td>{{range .Scenarios}}<td class="v">{{inr .BreakEvenRate}}</td>{{end}}</tr>
+</table>
+<p class="src">Buildable {{printf "%.0f" .BuildableSqft}} sq ft ({{.AreaSource}}), {{pct .Inputs.CarpetRatio}} sold as carpet area.
+{{if .Inputs.Sources}}Sources: {{.Inputs.Sources}}{{end}}</p>
+{{end}}{{end}}
+
 <div class="scope">
   <b>Scope.</b> This report covers the documents and records listed above, as of {{dayv $s.AsOf}}. Each line names
   where it comes from. Government land records are presumptive, not a guarantee of title, and nothing here is a
@@ -188,8 +213,27 @@
   ScridddHub · report {{.ReportID}} · generated {{dayv .GeneratedAt}}
 </div>
 
-{{if eq .Status "signed"}}
-<div class="sign">Signed by <b>{{$s.AdvocateName}}</b>, Bar Council enrolment {{$s.AdvocateEnrolment}}, on {{day .FinalisedAt}}.</div>
-{{end}}
+<h3>Sign-off</h3>
+<table class="signoff">
+  <tr>
+    {{if eq .Tier "full"}}
+    <td class="sigcell">
+      <div class="sigrole">Title opinion: advocate</div>
+      {{if eq .Status "signed"}}<div class="signame">{{$s.AdvocateName}}</div><div class="src">Bar Council enrolment {{$s.AdvocateEnrolment}} · {{day .FinalisedAt}}</div>
+      {{else}}<div class="signame todo">Name, enrolment no.</div>{{end}}
+      <div class="sigline">Signature</div>
+    </td>
+    {{end}}
+    <td class="sigcell">
+      <div class="sigrole">{{if eq .Tier "full"}}Prepared by: ScridddHub{{else}}Issued by: ScridddHub{{end}}</div>
+      {{if $s.IssuedBy}}<div class="signame">{{$s.IssuedBy}}</div>{{if .FinalisedAt}}<div class="src">{{day .FinalisedAt}}</div>{{end}}
+      {{else}}<div class="signame todo">Name</div>{{end}}
+      <div class="sigline">Signature</div>
+    </td>
+  </tr>
+</table>
+{{if .Fingerprint}}<p class="src">Report {{.FullID}} · fingerprint <b>{{.Fingerprint}}</b>. This code is worked out from the report’s
+contents when it was {{if eq .Status "signed"}}signed{{else}}issued{{end}}; ask ScridddHub to confirm it matches. If it doesn’t, the copy has been changed.</p>
+{{else}}<p class="src">Draft: the sign-off and fingerprint are added when the report is {{if eq .Tier "full"}}signed{{else}}issued{{end}}.</p>{{end}}
 </body>
 </html>

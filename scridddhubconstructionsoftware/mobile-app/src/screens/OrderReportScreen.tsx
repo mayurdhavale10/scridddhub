@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api } from '../api/client';
 import { colors } from '../theme/colors';
 import type { components } from '@scridddhub/api-client';
@@ -220,6 +220,8 @@ export function OrderReportScreen({ parcelId, onBack, onOpenLegalCheck, onOpenRe
   });
   const missing = docStatus.filter(d => !d.received).length;
   const chosen = TIERS[tier];
+  // The open (unsigned) draft of the chosen type, if any: ordering again just opens it.
+  const openDraft = reports.find(r => r.tier === tier && r.status === 'draft');
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -328,24 +330,37 @@ export function OrderReportScreen({ parcelId, onBack, onOpenLegalCheck, onOpenRe
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
       {!landRecord ? <Text style={styles.note}>Save the survey number and village above to order.</Text> : null}
       <Pressable
-        style={[styles.primaryButton, (ordering || !landRecord) && styles.disabled]}
-        disabled={ordering || !landRecord}
-        onPress={async () => {
-          setOrdering(true);
-          setError(null);
-          const { data, error: e } = await api.POST('/land-parcels/{parcelID}/reports', {
-            params: { path: { parcelID: parcelId } },
-            body: { tier },
-          });
-          setOrdering(false);
-          if (e || !data) {
-            setError('Could not create the report. Try again.');
+        style={[styles.primaryButton, (ordering || (!landRecord && !openDraft)) && styles.disabled]}
+        disabled={ordering || (!landRecord && !openDraft)}
+        onPress={() => {
+          // A draft of this type is already open: carry on with it rather than start another.
+          if (openDraft) {
+            onOpenReport(openDraft.id);
             return;
           }
-          onOpenReport(data.id);
+          Alert.alert(`Order a ${chosen.name}?`, `This starts a new ${chosen.name} for ${parcelName || 'this parcel'}.`, [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Order',
+              onPress: async () => {
+                setOrdering(true);
+                setError(null);
+                const { data, error: e } = await api.POST('/land-parcels/{parcelID}/reports', {
+                  params: { path: { parcelID: parcelId } },
+                  body: { tier },
+                });
+                setOrdering(false);
+                if (e || !data) {
+                  setError('Could not create the report. Try again.');
+                  return;
+                }
+                onOpenReport(data.id);
+              },
+            },
+          ]);
         }}>
         <Text style={styles.primaryButtonText}>
-          {ordering ? 'Creating…' : `Order ${chosen.name}`}
+          {ordering ? 'Creating…' : openDraft ? `Open your ${chosen.name} draft` : `Order ${chosen.name}`}
         </Text>
       </Pressable>
       <Text style={styles.footnote}>

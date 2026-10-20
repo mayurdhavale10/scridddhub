@@ -1,145 +1,103 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 
-// Screen 1 (Splash), ported from docs/design/screen1-splash-reference.html — the CSS keyframe
-// spec for a physics-driven leaf tumble (2 deliberate "air pocket" stalls) followed by a
-// wordmark entrance. Ported with the plain Animated API (not reanimated) using TWO separate
-// driving Animated.Values, matching the CSS's own two separate `animation` declarations with
-// two different timing functions:
-//   .leaf-motion:     cubic-bezier(0.2, 0.9, 0.3, 1)   — extremely front-loaded (measured:
-//                      ~40% done by 226ms, ~96% done by 1150ms of the 2100ms total)
-//   .wordmark-motion: cubic-bezier(0.22, 1, 0.36, 1)   — a gentler ease-out
-// Each driver is interpolated through the exact same percentage keyframe breakpoints as its
-// CSS counterpart — this preserves both leaf stall beats (~26-32%, ~58-64%) rather than
-// smoothing over them, and reproduces the reference's actual real-time rhythm (fast tumble,
-// then a long static hold) rather than an evenly-paced approximation.
+// Screen 1 (Splash): a leaf falls the way a real one does, then the wordmark settles beside it.
 //
-// Two disclosed simplifications, not silently dropped:
-// 1. CSS translateZ/perspective depth mid-flight isn't reproduced (RN has no real Z-compositing)
-//    — only the entry scale(0.92)/scale(0.98) cues from the original keyframes are kept.
-// 2. The wordmark's CSS `filter: blur(4px)→0` dissolve is approximated with a scale(0.96→1) pop
-//    instead of true blur — a native blur view isn't part of this build yet.
-// The exact brand typeface (Plus Jakarta Sans 800) also isn't linked as a custom font yet; this
-// uses the system bold weight at the same size/spacing as a stand-in.
+// A falling leaf doesn't drop straight or jump between poses: it swings like a pendulum, tilting
+// into each swing, gliding and lifting a little at the end of each one, and the swings die down
+// until it lands softly. That motion is computed here as smooth functions of time and sampled
+// into many points (FALL_SAMPLES), so every frame is on the curve. (The first version jumped
+// between 14 fixed poses in straight lines, which showed as kinks, and was stretched to 10.5 s.)
+// One linear clock drives everything on the native driver, so it runs on the UI thread.
 
 type Props = {
   onFinish: () => void;
 };
 
-// Deliberately paced at 5x the reference's real 2100ms, not just for legibility but as an
-// intentional brand-splash choice (per user direction) — same bezier curves, same rhythm,
-// stretched over more real time so the tumble reads as a considered brand moment.
-const DURATION_MS = 10500;
-// The hold itself isn't scaled with the tumble — a typical splash holds the settled logo for
-// under a second before moving on, not proportionally as long as a slowed-down entrance.
-const HOLD_MS = 600;
+const FALL_MS = 3600; // the fall itself; a real leaf crosses a phone-height in roughly 3–4 s
+const SLIDE_MS = 600; // landed leaf glides into the logo position as the wordmark appears
+const HOLD_MS = 700; // settled logo, then on to the app
+const TOTAL_MS = FALL_MS + SLIDE_MS + HOLD_MS;
+const FALL_SAMPLES = 90; // points per curve; enough that the path reads as continuous
 
-// The last breakpoint (83 in the original CSS keyframes) marks when the leaf slides from its
-// landing spot (dead center, keyframe 70) into its final "logo lockup" position clear of the
-// wordmark (translateX -104, see leafTranslateX below). That's fine at the reference's real
-// 2100ms pace, but this bezier's tail crawls very slowly in raw-progress terms — at the 5x-slowed
-// 10500ms duration, the 70→83 gap stretches into several real seconds, during which the leaf just
-// sits on top of the text. Pulled the breakpoint in to 72 (right next to the 70 landing point, the
-// same window the wordmark's own snap uses) so the leaf clears the text immediately after landing
-// instead of after a multi-second delay — a timing fix, not a speed change to the tumble itself.
-const KEYFRAMES = [0, 6, 14, 20, 26, 32, 38, 46, 52, 58, 64, 70, 72, 100];
+// The fall's shape.
+const DROP = 430; // starts this far above its landing spot (px)
+const SWAY = 72; // widest side-to-side swing (px), shrinking to 0 at landing
+const SWINGS = 2.5; // swings during the fall
+const LIFT = 26; // how much it glides up at the end of each swing (px)
+const TILT = 28; // tilt into the swing (deg)
+const LOGO_X = -104; // where the leaf rests in the logo, left of the wordmark
+
+const fallInput: number[] = [];
+const fall = { x: [] as number[], y: [] as number[], rz: [] as string[], ry: [] as string[], rx: [] as string[] };
+for (let i = 0; i <= FALL_SAMPLES; i++) {
+  const u = i / FALL_SAMPLES; // 0 → 1 over the fall
+  // Swings shrink to nothing; the 1.5 power makes them fade with zero speed at landing, so the
+  // leaf settles instead of stopping dead.
+  const env = Math.pow(1 - u, 1.5);
+  const phase = 2 * Math.PI * SWINGS * u - Math.PI / 2; // starts at the left end of a swing
+  const swing = Math.sin(phase);
+  // Descends at a nearly steady rate (it reaches its slow terminal speed at once), easing off
+  // just before the ground, and lifts slightly at each end of a swing as it glides.
+  const descent = 1 - Math.pow(1 - u, 1.25);
+  fallInput.push(u * FALL_MS);
+  fall.x.push(SWAY * env * swing);
+  fall.y.push(-DROP * (1 - descent) - LIFT * env * swing * swing);
+  // Tilts toward the way it's moving (the swing's velocity), and turns over a little as it rocks.
+  fall.rz.push(`${(TILT * env * Math.cos(phase)).toFixed(2)}deg`);
+  fall.ry.push(`${(34 * env * Math.sin(2 * phase)).toFixed(2)}deg`);
+  fall.rx.push(`${(16 * env * Math.cos(phase)).toFixed(2)}deg`);
+}
+
+// After landing: glide into the logo position with a gentle ease-out, then hold.
+const SLIDE_SAMPLES = 20;
+const slideInput: number[] = [];
+const slideX: number[] = [];
+for (let i = 1; i <= SLIDE_SAMPLES; i++) {
+  const v = i / SLIDE_SAMPLES;
+  const eased = 1 - Math.pow(1 - v, 3);
+  slideInput.push(FALL_MS + v * SLIDE_MS);
+  slideX.push(LOGO_X * eased);
+}
+
+const holdAt = <T,>(values: T[], last: T) => [...values, last];
+const IN_FALL = [...fallInput, TOTAL_MS];
+const IN_ALL = [...fallInput, ...slideInput, TOTAL_MS];
 
 export function SplashScreen({ onFinish }: Props) {
-  const progress = useRef(new Animated.Value(0)).current;
-  const wordmarkProgress = useRef(new Animated.Value(0)).current;
+  const clock = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Native-driven: the earlier "invisible leaf" bug was actually the absolute-positioning
-    // issue above, not a native-driver limitation — that assumption was wrong and cost a JS-
-    // driven animation's per-frame bridge traffic for no reason, which reads as lag/jank over
-    // a long duration. opacity/transform (translate, scale, rotateX/Y/Z, perspective) are all
-    // native-driver-supported, so this runs on the UI thread instead of re-sending a recomputed
-    // style every frame from JS.
-    const leafAnim = Animated.timing(progress, {
-      toValue: 100,
-      duration: DURATION_MS,
-      easing: Easing.bezier(0.2, 0.9, 0.3, 1),
+    const anim = Animated.timing(clock, {
+      toValue: TOTAL_MS,
+      duration: TOTAL_MS,
+      easing: Easing.linear, // the curves above carry the motion; the clock just ticks
       useNativeDriver: true,
     });
-    const wordmarkAnim = Animated.timing(wordmarkProgress, {
-      toValue: 100,
-      duration: DURATION_MS,
-      easing: Easing.bezier(0.22, 1, 0.36, 1),
-      useNativeDriver: true,
-    });
-    leafAnim.start();
-    wordmarkAnim.start();
-    const timer = setTimeout(onFinish, DURATION_MS + HOLD_MS);
-    return () => {
-      leafAnim.stop();
-      wordmarkAnim.stop();
-      clearTimeout(timer);
-    };
+    anim.start(({ finished }) => finished && onFinish());
+    return () => anim.stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const leafTranslateX = progress.interpolate({
-    inputRange: KEYFRAMES,
-    outputRange: [-14, -28, -52, -38, -32, -35, -10, 38, 46, 18, 0, 0, -104, -104],
-  });
-  const leafTranslateY = progress.interpolate({
-    inputRange: KEYFRAMES,
-    outputRange: [-450, -330, -240, -185, -165, -162, -125, -68, -32, -12, 0, 0, 0, 0],
-  });
-  const leafRotateX = progress.interpolate({
-    inputRange: KEYFRAMES,
-    outputRange: [
-      '42deg', '32deg', '18deg', '-10deg', '-18deg', '-8deg', '36deg',
-      '24deg', '-14deg', '-8deg', '4deg', '0deg', '0deg', '0deg',
-    ],
-  });
-  const leafRotateY = progress.interpolate({
-    inputRange: KEYFRAMES,
-    outputRange: [
-      '-58deg', '-48deg', '-22deg', '12deg', '6deg', '14deg', '62deg',
-      '44deg', '-28deg', '-10deg', '-4deg', '0deg', '0deg', '0deg',
-    ],
-  });
-  const leafRotateZ = progress.interpolate({
-    inputRange: KEYFRAMES,
-    outputRange: [
-      '-24deg', '-16deg', '-28deg', '-12deg', '-8deg', '-4deg', '18deg',
-      '22deg', '12deg', '2deg', '-1deg', '0deg', '0deg', '0deg',
-    ],
-  });
-  const leafScale = progress.interpolate({
-    inputRange: [0, 6, 14, 100],
-    outputRange: [0.92, 0.98, 1, 1],
-  });
-  const leafOpacity = progress.interpolate({
-    inputRange: [0, 6, 100],
-    outputRange: [0, 1, 1],
-  });
+  const leafX = clock.interpolate({ inputRange: IN_ALL, outputRange: [...fall.x, ...slideX, LOGO_X] });
+  const leafY = clock.interpolate({ inputRange: IN_FALL, outputRange: holdAt(fall.y, 0) });
+  const leafRotateZ = clock.interpolate({ inputRange: IN_FALL, outputRange: holdAt(fall.rz, '0deg') });
+  const leafRotateY = clock.interpolate({ inputRange: IN_FALL, outputRange: holdAt(fall.ry, '0deg') });
+  const leafRotateX = clock.interpolate({ inputRange: IN_FALL, outputRange: holdAt(fall.rx, '0deg') });
+  const leafOpacity = clock.interpolate({ inputRange: [0, 260, TOTAL_MS], outputRange: [0, 1, 1] });
+  const leafScale = clock.interpolate({ inputRange: [0, FALL_MS * 0.2, TOTAL_MS], outputRange: [0.94, 1, 1] });
 
-  // The reveal itself (opacity/translate/scale settling to final state) is deliberately snappy —
-  // starts at the same 68% mark as before (right as the leaf lands) but finishes by 72% instead
-  // of 86%, cutting the fade-in from ~1.9s down to ~420ms. Leaf timing/duration/hold are untouched.
-  const wordmarkOpacity = wordmarkProgress.interpolate({
-    inputRange: [0, 68, 72, 100],
-    outputRange: [0, 0, 1, 1],
-  });
-  const wordmarkTranslateX = wordmarkProgress.interpolate({
-    inputRange: [0, 68, 72, 100],
-    outputRange: [74, 74, 34, 34],
-  });
-  const wordmarkScale = wordmarkProgress.interpolate({
-    inputRange: [0, 68, 72, 100],
-    outputRange: [0.96, 0.96, 1, 1],
-  });
+  // The wordmark fades and slides in as the leaf glides aside, on an ease-out.
+  const reveal = [FALL_MS + 80, FALL_MS + 260, FALL_MS + 460, FALL_MS + SLIDE_MS, TOTAL_MS];
+  const wordmarkOpacity = clock.interpolate({ inputRange: [0, ...reveal], outputRange: [0, 0, 0.6, 0.92, 1, 1] });
+  const wordmarkX = clock.interpolate({ inputRange: [0, ...reveal], outputRange: [74, 74, 48, 37, 34, 34] });
+  const wordmarkScale = clock.interpolate({ inputRange: [0, ...reveal], outputRange: [0.96, 0.96, 0.985, 0.997, 1, 1] });
 
   return (
     <View style={styles.container}>
-      {/* Each element gets its own full-bleed centering layer. CSS centers a position:absolute
-          child of a flex container by default (an absolute-child-alignment rule Yoga/RN doesn't
-          implement) — without this wrapper, leaf/wordmark's position:absolute would anchor to
-          the screen's top-left corner (0,0) instead of center, and every translate offset below
-          would be measured from the wrong origin. This wrapper makes "centered, transform: none"
-          the natural rest state, exactly matching the CSS reference. */}
+      {/* Each element gets its own full-bleed centering layer, so "centered, no transform" is the
+          rest state and every translate is measured from the screen's centre (RN doesn't centre
+          absolutely positioned children the way CSS does). */}
       <View style={styles.centerLayer} pointerEvents="none">
         <Animated.Image
           source={require('../assets/leaf.png')}
@@ -149,8 +107,8 @@ export function SplashScreen({ onFinish }: Props) {
               opacity: leafOpacity,
               transform: [
                 { perspective: 1000 },
-                { translateX: leafTranslateX },
-                { translateY: leafTranslateY },
+                { translateX: leafX },
+                { translateY: leafY },
                 { rotateX: leafRotateX },
                 { rotateY: leafRotateY },
                 { rotateZ: leafRotateZ },
@@ -164,10 +122,7 @@ export function SplashScreen({ onFinish }: Props) {
         <Animated.Text
           style={[
             styles.wordmark,
-            {
-              opacity: wordmarkOpacity,
-              transform: [{ translateX: wordmarkTranslateX }, { scale: wordmarkScale }],
-            },
+            { opacity: wordmarkOpacity, transform: [{ translateX: wordmarkX }, { scale: wordmarkScale }] },
           ]}>
           ScridddHub
         </Animated.Text>

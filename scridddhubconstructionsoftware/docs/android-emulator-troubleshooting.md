@@ -281,7 +281,7 @@ on screen the same way as the off-screen fix above.
 ## Building a demo APK for a real phone (2026-10-08)
 
 The demo APK talks to the backend on the laptop over the local Wi-Fi (`DEMO_HOST` in
-`mobile-app/src/api/client.ts`, now `http://192.168.0.102:8080`). The phone must be on the same
+`mobile-app/src/api/client.ts`, now `http://192.168.1.48:8080`; it was 192.168.0.102 until 2026-10-17). The phone must be on the same
 Wi-Fi, and the backend must be running as `backend/bin/scridddhub-server.exe` (a fixed path, so the
 Windows firewall rule allowing it keeps working). If the laptop's address changes (`ipconfig`),
 update `DEMO_HOST` and rebuild.
@@ -290,12 +290,24 @@ update `DEMO_HOST` and rebuild.
    `npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android\app\src\main\assets\index.android.bundle --assets-dest android\app\src\main\res`
 2. Build from the short drive. Native paths are too long on C:. `RN_PREBUNDLED=1` makes the
    build use the bundle from step 1 instead of bundling again:
-   `subst S: <mobile-app>` then `$env:RN_PREBUNDLED='1'; cd S:\android; .\gradlew.bat app:assembleRelease -PreactNativeArchitectures=arm64-v8a`
+   `subst S: <mobile-app>` then `$env:RN_PREBUNDLED='1'; cd S:\android; .\gradlew.bat app:assembleRelease "-PreactNativeArchitectures=arm64-v8a,x86_64"`
 3. The APK is at `android/app/build/outputs/apk/release/app-release.apk`.
 4. Delete the generated `src/main/assets/`, `res/drawable-mdpi/` and `res/raw/` afterwards.
    Otherwise debug builds load the stale bundle.
 
 Limits:
 - It's signed with the debug key. That's fine for sideloading, not for the Play Store.
-- It uses plain HTTP, which is allowed only in release builds through `manifestPlaceholders`.
-- It's arm64 only, so it covers real phones but not the x86_64 emulator.
+- It uses plain HTTP, allowed by `android:usesCleartextTraffic="true"` written directly in
+  `AndroidManifest.xml`. A `manifestPlaceholder` doesn't work: the React Native Gradle plugin sets it
+  to false for release builds, so the APK silently couldn't reach the backend (fixed 2026-10-17).
+- Built for arm64 and x86_64, so the same APK runs on real phones and the emulator.
+
+**Using it on the emulator (2026-10-17):** install this APK instead of the debug build. It carries
+its code, so it opens in seconds and needs no Metro (the debug build downloads about 9 MB from
+Metro on every start, and kept stalling at 99%). If the install fails with "not enough space",
+uninstall the old app and clear the emulator's Chrome data (`adb shell pm clear com.android.chrome`).
+
+## Starting everything: scripts/start-dev.bat
+Double-click `scripts/start-dev.bat` (or run `scripts/start-dev.ps1`). It starts, skipping what's
+already running: Docker and Postgres, the backend, the emulator (moving its window on-screen), the
+port forwarding, then opens the app. Add `-Metro` for development with the debug build.

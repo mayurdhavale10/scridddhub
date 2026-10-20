@@ -31,6 +31,8 @@ type reportSummary struct {
 	Verdict      string    `json:"verdict,omitempty"`
 	CreatedAt    string    `json:"created_at"`
 	FinalisedAt  *string   `json:"finalised_at,omitempty"`
+	IssuedBy     string    `json:"issued_by,omitempty"`
+	Fingerprint  string    `json:"fingerprint,omitempty"` // of the frozen contents, once final
 }
 
 type reportDetail struct {
@@ -40,7 +42,8 @@ type reportDetail struct {
 
 func toReportSummary(r *domain.DueDiligenceReport) reportSummary {
 	s := reportSummary{ID: r.ID, LandParcelID: r.LandParcelID, Tier: r.Tier, Status: r.Status,
-		OpenItems: r.OpenItems(), Verdict: r.Verdict, CreatedAt: r.CreatedAt.Format(timeFormat)}
+		OpenItems: r.OpenItems(), Verdict: r.Verdict, CreatedAt: r.CreatedAt.Format(timeFormat),
+		IssuedBy: r.IssuedBy, Fingerprint: r.Fingerprint()}
 	if s.OpenItems == nil || r.Final() {
 		s.OpenItems = []string{}
 	}
@@ -169,6 +172,35 @@ func (h *DueDiligenceReportHandler) Update(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, toReportSummary(rep))
 }
 
+// SetBuilderCalc handles PUT /reports/{reportID}/builder-calc (save the builder calculation's
+// inputs) and DELETE (clear them). Kept apart from PUT /reports/{id} so saving sections D–H
+// can't wipe it.
+func (h *DueDiligenceReportHandler) SetBuilderCalc(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("reportID"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	var calc *domain.BuilderCalcInputs
+	if r.Method == http.MethodPut {
+		calc = &domain.BuilderCalcInputs{}
+		if err := json.NewDecoder(r.Body).Decode(calc); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	rep, err := h.usecase.SetBuilderCalc(r.Context(), middleware.ActorFromContext(r.Context()), id, calc)
+	if err != nil {
+		if errors.Is(err, domain.ErrReportFinalised) || errors.Is(err, domain.ErrNotFound) {
+			writeReportError(w, err)
+			return
+		}
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toReportSummary(rep))
+}
+
 // DraftVerdict handles POST /reports/{reportID}/draft-verdict: the AI drafts section H.
 func (h *DueDiligenceReportHandler) DraftVerdict(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("reportID"))
@@ -199,7 +231,8 @@ func (h *DueDiligenceReportHandler) Document(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	page, err := reportpdf.HTML(reportpdf.Document{
-		ReportID: rep.ID.String()[:8], Tier: rep.Tier, Status: rep.Status, FinalisedAt: rep.FinalisedAt,
+		ReportID: rep.ID.String()[:8], FullID: rep.ID.String(), Fingerprint: rep.Fingerprint(),
+		Tier: rep.Tier, Status: rep.Status, FinalisedAt: rep.FinalisedAt,
 		OpenItems: rep.OpenItems(), Sections: sections, GeneratedAt: time.Now(),
 	})
 	if err != nil {
@@ -244,12 +277,13 @@ func (h *DueDiligenceReportHandler) Finalise(w http.ResponseWriter, r *http.Requ
 	var req struct {
 		AdvocateName      string `json:"advocate_name"`
 		AdvocateEnrolment string `json:"advocate_enrolment"`
+		IssuedBy          string `json:"issued_by"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	rep, err := h.usecase.Finalise(r.Context(), middleware.ActorFromContext(r.Context()), id, req.AdvocateName, req.AdvocateEnrolment)
+	rep, err := h.usecase.Finalise(r.Context(), middleware.ActorFromContext(r.Context()), id, req.AdvocateName, req.AdvocateEnrolment, req.IssuedBy)
 	if err != nil {
 		writeReportError(w, err)
 		return

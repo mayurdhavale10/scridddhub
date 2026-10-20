@@ -1,6 +1,8 @@
 package domain
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -59,6 +61,9 @@ type DueDiligenceReport struct {
 	MaxFSI            *float64
 	DevelopmentNote   string
 
+	// BuilderCalc is the builder's view of the land (residual land value), or nil if not entered.
+	BuilderCalc *BuilderCalcInputs
+
 	Verdict        string
 	VerdictSummary string
 	FixList        []string
@@ -67,8 +72,11 @@ type DueDiligenceReport struct {
 
 	AdvocateName      string
 	AdvocateEnrolment string
-	FinalisedAt       *time.Time
-	FrozenReport      json.RawMessage // the composed report at sign/issue time
+	// IssuedBy is the ScridddHub team member who issued the report: required for a Quick Screen,
+	// recorded as the preparer on a Full report.
+	IssuedBy     string
+	FinalisedAt  *time.Time
+	FrozenReport json.RawMessage // the composed report at sign/issue time
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -76,6 +84,18 @@ type DueDiligenceReport struct {
 
 func (r *DueDiligenceReport) Final() bool {
 	return r.Status == ReportStatusSigned || r.Status == ReportStatusIssued
+}
+
+// Fingerprint identifies a finished report's frozen contents: the first 16 hex digits of their
+// SHA-256, in groups of four ("3F9A 21C0 7B44 E812"). It's printed on the PDF; anyone can ask
+// ScridddHub for the report by its ID and compare, so an edited copy shows. "" until final.
+func (r *DueDiligenceReport) Fingerprint() string {
+	if !r.Final() || len(r.FrozenReport) == 0 {
+		return ""
+	}
+	sum := sha256.Sum256(r.FrozenReport)
+	h := strings.ToUpper(hex.EncodeToString(sum[:8]))
+	return h[0:4] + " " + h[4:8] + " " + h[8:12] + " " + h[12:16]
 }
 
 func validVerdict(v string) bool {
@@ -159,13 +179,18 @@ func (r *DueDiligenceReport) OpenItems() []string {
 
 // Finalise freezes the report. A Full report needs the advocate's name and enrolment number and
 // becomes "signed"; a Quick Screen becomes "issued" with no lawyer.
-func (r *DueDiligenceReport) Finalise(advocateName, advocateEnrolment string, frozen json.RawMessage, at time.Time) error {
+func (r *DueDiligenceReport) Finalise(advocateName, advocateEnrolment, issuedBy string, frozen json.RawMessage, at time.Time) error {
 	if r.Final() {
 		return ErrReportFinalised
 	}
 	if open := r.OpenItems(); len(open) > 0 {
 		return fmt.Errorf("%w: %s", ErrReportNotReady, strings.Join(open, ", "))
 	}
+	issuedBy = strings.TrimSpace(issuedBy)
+	if r.Tier != ReportTierFull && issuedBy == "" {
+		return fmt.Errorf("%w: the name of the person issuing it", ErrReportNotReady)
+	}
+	r.IssuedBy = issuedBy
 	if r.Tier == ReportTierFull {
 		if strings.TrimSpace(advocateName) == "" || strings.TrimSpace(advocateEnrolment) == "" {
 			return fmt.Errorf("%w: advocate name and enrolment number", ErrReportNotReady)

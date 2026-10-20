@@ -28,6 +28,8 @@ var files embed.FS
 // Document is everything the page shows.
 type Document struct {
 	ReportID    string
+	FullID      string // the report's whole ID, to quote when checking a copy
+	Fingerprint string // of the frozen contents; "" on a draft
 	Tier        string // quick | full
 	Status      string // draft | signed | issued
 	FinalisedAt *time.Time
@@ -38,6 +40,15 @@ type Document struct {
 
 var tmpl = template.Must(template.New("report.html").Funcs(template.FuncMap{
 	"crore": crore,
+	// croreV is crore for a plain value; a negative land value reads as "below ₹0".
+	"croreV": func(v int64) string {
+		if v < 0 {
+			return "below ₹0 (" + crore(&[]int64{-v}[0]) + " short)"
+		}
+		return crore(&v)
+	},
+	"inr": func(v int64) string { return "₹" + indian(v) },
+	"pct": func(v float64) string { return fmt.Sprintf("%.0f%%", v*100) },
 	"day": func(t *time.Time) string {
 		if t == nil {
 			return ""
@@ -153,22 +164,7 @@ func crore(v *int64) string {
 }
 
 // indian formats 304920 as 3,04,920.
-func indian(n int64) string {
-	s := fmt.Sprintf("%d", n)
-	if len(s) <= 3 {
-		return s
-	}
-	head, tail := s[:len(s)-3], s[len(s)-3:]
-	var parts []string
-	for len(head) > 2 {
-		parts = append([]string{head[len(head)-2:]}, parts...)
-		head = head[:len(head)-2]
-	}
-	if head != "" {
-		parts = append([]string{head}, parts...)
-	}
-	return strings.Join(parts, ",") + "," + tail
-}
+func indian(n int64) string { return domain.IndianDigits(n) }
 
 func tenureLabel(t string) string {
 	switch t {
